@@ -1,0 +1,243 @@
+<?xml version="1.0"?>
+
+<robot name="FourDOF">
+  
+  <!-- *************************************************** -->
+  <!-- ******************** Kinematics ******************* -->
+  <!-- *************************************************** -->
+  <!-- Note the 'origin' tag in the joints defines the shift and
+       reorientation, i.e. the transform.  For moving joints, this
+       happens before the continuous joint rotates around 'axis'. -->
+
+  <link name="world">
+  </link>
+
+  <joint name="prime0" type="fixed">
+    <parent link="world"/>
+    <child  link="prime0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="prime0">
+  </link>
+
+  <joint name="theta1" type="continuous">
+    <parent link="prime0"/>
+    <child  link="link1"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis   xyz="0 0 1"/>
+  </joint>
+
+  <link name="link1">
+  </link>
+
+  <joint name="prime1" type="fixed">
+    <parent link="link1"/>
+    <child  link="prime1"/>
+    <origin xyz="0 0 0.4" rpy="-1.5708 0 0"/>
+  </joint>
+
+  <link name="prime1">
+  </link>
+
+  <joint name="theta2" type="continuous">
+    <parent link="prime1"/>
+    <child  link="link2"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis   xyz="0 0 1"/>
+  </joint>
+
+  <link name="link2">
+  </link>
+
+  <joint name="prime2" type="fixed">
+    <parent link="link2"/>
+    <child  link="prime2"/>
+    <origin xyz="0 0 0.4" rpy="-1.5708 0 0"/>
+  </joint>
+
+  <link name="prime2">
+  </link>
+
+  <joint name="theta3" type="continuous">
+    <parent link="prime2"/>
+    <child  link="link3"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis   xyz="0 0 1"/>
+  </joint>
+
+  <link name="link3">
+  </link>
+
+  <joint name="prime3" type="fixed">
+    <parent link="link3"/>
+    <child  link="prime3"/>
+    <origin xyz="0 0 0.4" rpy="1.5708 0 0"/>
+  </joint>
+
+  <link name="prime3">
+  </link>
+
+  <joint name="theta4" type="continuous">
+    <parent link="prime3"/>
+    <child  link="link4"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis   xyz="0 0 1"/>
+  </joint>
+
+  <link name="link4">
+  </link>
+
+  <joint name="final" type="fixed">
+    <parent link="link4"/>
+    <child  link="tip"/>
+    <origin xyz="0 0 0.4" rpy="1.5708 0 0"/>
+  </joint>
+
+  <link name="tip">
+  </link>
+
+
+  <!-- *************************************************** -->
+  <!-- ******************* RVIZ Colors ******************* -->
+  <!-- *************************************************** -->
+
+  <material name="white">    <color rgba="1.00 1.00 1.00 1"/>  </material>
+  <material name="gray">     <color rgba="0.60 0.60 0.60 1"/>  </material>
+  <material name="table">    <color rgba="0.85 0.77 0.77 1"/>  </material>
+  <material name="black">    <color rgba="0.00 0.00 0.00 1"/>  </material>
+
+  <material name="red">      <color rgba="1.00 0.00 0.00 1"/>  </material>
+  <material name="green">    <color rgba="0.00 1.00 0.00 1"/>  </material>
+  <material name="blue">     <color rgba="0.00 0.00 1.00 1"/>  </material>
+
+  <material name="cyan">     <color rgba="0.00 1.00 1.00 1"/>  </material>
+  <material name="magenta">  <color rgba="1.00 0.00 1.00 1"/>  </material>
+  <material name="yellow">   <color rgba="1.00 1.00 0.00 1"/>  </material>
+
+  <material name="orange">   <color rgba="1.00 0.65 0.00 1"/>  </material>
+
+
+  <!-- *************************************************** -->
+  <!-- ************* Visual Building Blocks ************** -->
+  <!-- *************************************************** -->
+
+  <!-- THESE ARE EXAMPLES... PLAY AS YOU LIKE -->
+
+  <!-- *** Attach a visual of motor 1 to prime0 frame (link) *** -->
+
+  <joint name="attach-motor1" type="fixed">
+    <parent link="prime0"/>
+    <child  link="motor1"/>
+  </joint>
+  <link name="motor1">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+	<cylinder length="0.2" radius="0.05"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+  </link>
+
+  <joint name="attach-motor2" type="fixed">
+    <parent link="prime1"/>
+    <child  link="motor2"/>
+  </joint>
+  <link name="motor2">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+	<cylinder length="0.2" radius="0.05"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+  </link>
+
+  <joint name="attach-motor3" type="fixed">
+    <parent link="prime2"/>
+    <child  link="motor3"/>
+  </joint>
+  <link name="motor3">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+	<cylinder length="0.2" radius="0.05"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+  </link>
+
+  <joint name="attach-motor4" type="fixed">
+    <parent link="prime3"/>
+    <child  link="motor4"/>
+  </joint>
+  <link name="motor4">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+	<cylinder length="0.2" radius="0.05"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
+  </link>
+
+  <!-- *** Attach a visual of a rod to prime2 *** -->
+
+  <joint name="attach-rod1" type="fixed">
+    <parent link="prime0"/>
+    <child  link="rod1"/>
+  </joint>
+  <link name="rod1">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+	<cylinder length="0.4" radius="0.01"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="attach-rod2" type="fixed">
+    <parent link="prime1"/>
+    <child  link="rod2"/>
+  </joint>
+  <link name="rod2">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+	<cylinder length="0.4" radius="0.01"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="attach-rod3" type="fixed">
+    <parent link="prime2"/>
+    <child  link="rod3"/>
+  </joint>
+  <link name="rod3">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+	<cylinder length="0.4" radius="0.01"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="attach-rod4" type="fixed">
+    <parent link="prime3"/>
+    <child  link="rod4"/>
+  </joint>
+  <link name="rod4">
+    <visual>
+      <origin xyz="0 0 0.2" rpy="0 0 0"/>
+      <geometry>
+	<cylinder length="0.4" radius="0.01"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+</robot>
