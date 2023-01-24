@@ -1,4 +1,4 @@
-'''hw5p1sol.py
+"""hw5p1sol.py
 
    This is the solution code for HW5 Problem 1.
 
@@ -12,31 +12,31 @@
    Node:        /generator
    Publish:     /joint_states           sensor_msgs/JointState
 
-'''
+"""
 
 import rclpy
 import numpy as np
 
-from hwsols.GeneratorNode   import GeneratorNode
-from hwsols.Segments        import Hold, Stay, GotoCubic, SplineCubic
-from hwsols.hw4p3sol        import fkin, Jac
+from hwsols.GeneratorNode import GeneratorNode
+from hwsols.Segments import Hold, Stay, GotoCubic, SplineCubic
+from hwsols.hw4p3sol import fkin, Jac
 
 
 #
 #   Trajectory Class
 #
-class Trajectory():
+class Trajectory:
     # Initialization.
     def __init__(self, node):
         # Pick the target.
-        xgoal = np.array([0.2, -1.0, 0.5]).reshape((3,1))
-        
+        xgoal = np.array([0.2, -1.0, 0.5]).reshape((3, 1))
+
         # Build up the list of segments, starting with nothing.
         self.segments = []
 
         # Set the initial joint value guess.
-        q = np.array([0.0, np.pi/2, -np.pi/2]).reshape(3,1)
-            
+        q = np.array([0.0, np.pi / 2, -np.pi / 2]).reshape(3, 1)
+
         # Newton-Raphson Algorithm: Iterate seven times.
         for k in range(7):
             x = fkin(q)
@@ -48,15 +48,14 @@ class Trajectory():
 
         # Disable cyclic to end after the last segment.
         self.cyclic = False
-    
+
         # Zero the start time of the current segment.
         self.t0 = 0.0
-
 
     # Declare the joint names.
     def jointnames(self):
         # Return a list of joint names FOR THE EXPECTED URDF!
-        return ['theta1', 'theta2', 'theta3']
+        return ["theta1", "theta2", "theta3"]
 
     # Evaluate at the given time.  This was last called (dt) ago.
     def evaluate(self, tabsolute, dt):
@@ -89,7 +88,7 @@ class Trajectory():
 def main(args=None):
     # Initialize ROS and the generator node (100Hz) for the Trajectory.
     rclpy.init(args=args)
-    generator = GeneratorNode('generator', 100, Trajectory)
+    generator = GeneratorNode("generator", 100, Trajectory)
 
     # Spin, until interrupted or the trajectory ends.
     generator.spin()
@@ -97,6 +96,7 @@ def main(args=None):
     # Shutdown the node and ROS.
     generator.shutdown()
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

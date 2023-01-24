@@ -17,7 +17,7 @@ from time import sleep
 #   Simply create a Lookup object to determine/locate the connected
 #   actuators.  Report as requested.
 #
-class Hebi():
+class Hebi:
     # Initialization.
     def __init__(self):
         # Locate HEBI actuators on the network, waiting 1s for discovery.
@@ -26,12 +26,12 @@ class Hebi():
 
     # Reporting
     def reportActuators(self):
-        # Print the results. 
-        print('HEBI actuators found on the local network:')
+        # Print the results.
+        print("HEBI actuators found on the local network:")
         for entry in self.lookup.entrylist:
             # Extract the family/name/address
-            family  = entry.family
-            name    = entry.name
+            family = entry.family
+            name = entry.name
             address = entry.mac_address
 
             # Print...
@@ -47,6 +47,7 @@ def main(args=None):
 
     # Report the actuators.
     hebi.reportActuators()
+
 
 if __name__ == "__main__":
     main()

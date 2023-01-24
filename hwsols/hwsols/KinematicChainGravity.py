@@ -1,4 +1,4 @@
-'''KinematicChainGravity.py
+"""KinematicChainGravity.py
 
    This is the solution code for Kinematic Chains w/Gravity (HW7 Problem 1).
 
@@ -51,42 +51,43 @@
    Node:        /kintest or as given
    Subscribe:   /robot_description      std_msgs/String
 
-'''
+"""
 
 import rclpy
 import numpy as np
 
-from rclpy.node               import Node
-from rclpy.qos                import QoSProfile, DurabilityPolicy
-from std_msgs.msg             import String
-from urdf_parser_py.urdf      import Robot
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy
+from std_msgs.msg import String
+from urdf_parser_py.urdf import Robot
 
-from hwsols.TransformHelpers  import *
+from hwsols.TransformHelpers import *
 
 
 #
 #   Kinematic Chain Data Class
 #
-class KinematicChainData():
+class KinematicChainData:
     def __init__(self):
-        self.type = []          # List of 'revolute' or 'prismatic'
-        self.e    = []          # List of 3x1 joint axes
-        self.T    = []          # List of 4x4 transforms
-        self.Ttip = None        # 4x4 tip transform
-        self.grav = []          # Nx1 Vector of gravity torques
+        self.type = []  # List of 'revolute' or 'prismatic'
+        self.e = []  # List of 3x1 joint axes
+        self.T = []  # List of 4x4 transforms
+        self.Ttip = None  # 4x4 tip transform
+        self.grav = []  # Nx1 Vector of gravity torques
 
 
 #
 #   Kinematic Chain Class
 #
-class KinematicChain():
+class KinematicChain:
     # Helper functions for printing info and errors.
     def info(self, string):
         self.node.get_logger().info("KinematicChain: " + string)
+
     def error(self, string):
         self.node.get_logger().error("KinematicChain: " + string)
         raise Exception(string)
-    
+
     # Initialization.
     def __init__(self, node, baseframe, tipframe, expectedjointnames):
         # Store the node (for the printing functions).
@@ -97,62 +98,64 @@ class KinematicChain():
         # message already published (if any).
         self.info("Waiting for the URDF to be published...")
         self.urdf = None
+
         def cb(msg):
             self.urdf = msg.data
-        topic   = '/robot_description'
-        quality = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL,
-                             depth=1)
+
+        topic = "/robot_description"
+        quality = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, depth=1)
         sub = node.create_subscription(String, topic, cb, quality)
         while self.urdf is None:
             rclpy.spin_once(node)
         node.destroy_subscription(sub)
 
         # Convert the URDF string into a Robot object and report.
-        robot     = Robot.from_xml_string(self.urdf)
+        robot = Robot.from_xml_string(self.urdf)
         self.name = robot.name
         self.info("URDF Robot '%s'" % self.name)
-        
+
         # Convert the URDF string into a Robot object and parse to
         # create the list of joints from the base frame to the tip
         # frame.  Search backwards, as this could be a tree structure.
         # Meaning while a parent may have multiple children, every
         # child has only one parent!  That makes the chain unique.
-        self.joints   = []
+        self.joints = []
         self.inertias = []
         frame = tipframe
-        while (frame != baseframe):
+        while frame != baseframe:
             joint = next((j for j in robot.joints if j.child == frame), None)
-            link  = next((l for l in robot.links  if l.name  == frame), None)
-            if (link is None):
+            link = next((l for l in robot.links if l.name == frame), None)
+            if link is None:
                 self.error("Unable find link '%s'" % frame)
-            if (joint is None):
+            if joint is None:
                 self.error("Unable find joint connecting to '%s'" % frame)
-            if (joint.parent == frame):
-                self.error("Joint '%s' connects '%s' to itself" %
-                           (joint.name, frame))
+            if joint.parent == frame:
+                self.error("Joint '%s' connects '%s' to itself" % (joint.name, frame))
             self.joints.insert(0, joint)
             self.inertias.insert(0, link.inertial)
             frame = joint.parent
 
         # Report we found.
-        self.dofs = sum(1 for j in self.joints if j.type != 'fixed')
-        self.info("%d total joints in URDF, %d active DOFs:" %
-             (len(self.joints), self.dofs))
+        self.dofs = sum(1 for j in self.joints if j.type != "fixed")
+        self.info(
+            "%d total joints in URDF, %d active DOFs:" % (len(self.joints), self.dofs)
+        )
         dof = 0
         for i in range(len(self.joints)):
-            joint   = self.joints[i]
+            joint = self.joints[i]
             inertia = self.inertias[i]
-            if joint.type == 'fixed':
+            if joint.type == "fixed":
                 string = "Joint #%d fixed      " % i
-            elif joint.type == 'continuous' or joint.type == 'revolute':
+            elif joint.type == "continuous" or joint.type == "revolute":
                 string = "Joint #%d rot DOF #%d " % (i, dof)
-                dof = dof+1
-            elif joint.type == 'prismatic':
+                dof = dof + 1
+            elif joint.type == "prismatic":
                 string = "Joint #%d lin DOF #%d " % (i, dof)
-                dof = dof+1
+                dof = dof + 1
             else:
-                self.error("Joint '%s' has unknown type '%s'" %
-                           (joint.name, joint.type))
+                self.error(
+                    "Joint '%s' has unknown type '%s'" % (joint.name, joint.type)
+                )
             string += "%-20s" % ("'" + joint.name + "'")
             if inertia is not None:
                 string += "mass %6.3fkg" % inertia.mass
@@ -161,21 +164,24 @@ class KinematicChain():
             self.info(string)
 
         # Confirm this matches the expectation
-        jointnames = [j.name for j in self.joints if j.type != 'fixed']
+        jointnames = [j.name for j in self.joints if j.type != "fixed"]
         if jointnames != list(expectedjointnames):
-            self.error("Chain does not match the expected names: " +
-                  str(expectedjointnames))
+            self.error(
+                "Chain does not match the expected names: " + str(expectedjointnames)
+            )
 
         # And pre-compute the kinematic chain data at the zero position.
-        self.setjoints(np.zeros((self.dofs,1)))
-
+        self.setjoints(np.zeros((self.dofs, 1)))
 
     # Update the joint positions.  This recomputes the chain data values!
     def setjoints(self, q):
         # Check the number of joints
-        if (len(q) != self.dofs):
-            self.error("Number of joint angles (%d) does not match URDF (%d)",
-                       len(q), self.dofs)
+        if len(q) != self.dofs:
+            self.error(
+                "Number of joint angles (%d) does not match URDF (%d)",
+                len(q),
+                self.dofs,
+            )
 
         # Remove any past data.
         self.data = KinematicChainData()
@@ -184,7 +190,7 @@ class KinematicChain():
         T = np.eye(4)
 
         # Initialize the gravoty torques.
-        grav = np.zeros((self.dofs,1))
+        grav = np.zeros((self.dofs, 1))
 
         # Walk the chain, one URDF <joint> entry at a time, being
         # 'fixed' (just a fixed transform), 'continuous'/'revolute'
@@ -195,11 +201,11 @@ class KinematicChain():
         # the chain...
         dof = 0
         for (joint, inertia) in zip(self.joints, self.inertias):
-            if (joint.type == 'fixed'):
+            if joint.type == "fixed":
                 # Just append the fixed transform
                 T = T @ T_from_URDF_origin(joint.origin)
-                
-            elif (joint.type == 'continuous') or (joint.type == 'revolute'):
+
+            elif (joint.type == "continuous") or (joint.type == "revolute"):
                 # Grab the joint axis in the local frame.
                 elocal = e_from_URDF_axis(joint.axis)
 
@@ -210,14 +216,14 @@ class KinematicChain():
 
                 # Compute the joint axis w.r.t. world frame.
                 e = R_from_T(T) @ elocal
-    
+
                 # Save the transform and advance the active DOF counter.
-                self.data.type.append('revolute')
+                self.data.type.append("revolute")
                 self.data.e.append(e)
                 self.data.T.append(T)
                 dof += 1
 
-            elif (joint.type == 'prismatic'):
+            elif joint.type == "prismatic":
                 # Grab the joint axis in the local frame.
                 elocal = e_from_URDF_axis(joint.axis)
 
@@ -230,7 +236,7 @@ class KinematicChain():
                 e = R_from_T(T) @ elocal
 
                 # Save the transform and advance the active DOF counter.
-                self.data.type.append('prismatic')
+                self.data.type.append("prismatic")
                 self.data.e.append(e)
                 self.data.T.append(T)
                 dof += 1
@@ -243,7 +249,7 @@ class KinematicChain():
             # Proceed if there is an inertial element.
             if inertia is not None:
                 # Check whether to shift to the child link's center of mass.
-                if (inertia.origin is not None):
+                if inertia.origin is not None:
                     Tlink = T @ T_from_URDF_origin(inertia.origin)
                 else:
                     Tlink = T
@@ -256,45 +262,50 @@ class KinematicChain():
                 # the gravity vector is vertically up in world frame,
                 # hence we simply take the 3rd element of the vector.
                 for k in range(dof):
-                    grav[k] += mg * np.cross(self.data.e[k],
-                                             pc - p_from_T(self.data.T[k]),
-                                             axis=0)[2]
-            
+                    grav[k] += (
+                        mg
+                        * np.cross(
+                            self.data.e[k], pc - p_from_T(self.data.T[k]), axis=0
+                        )[2]
+                    )
+
         # Also save the tip transform and gravity vector.
         self.data.Ttip = T
         self.data.grav = grav
-
 
     # Extract the position/orientation data from the already computed
     # kinematic chain data in self.data!
     def ptip(self):
         return p_from_T(self.data.Ttip)
+
     def Rtip(self):
         return R_from_T(self.data.Ttip)
+
     def Ttip(self):
         return self.data.Ttip
 
     # Extract the gravity vector.
     def g(self):
         return self.data.grav
-        
+
     # Extract the Jacobian data.
     def Jv(self):
-        J = np.zeros((3,self.dofs))
+        J = np.zeros((3, self.dofs))
         for dof in range(self.dofs):
-            if (self.data.type[dof] == 'revolute'):
+            if self.data.type[dof] == "revolute":
                 dp = p_from_T(self.data.Ttip) - p_from_T(self.data.T[dof])
-                J[:,dof:dof+1] = cross(self.data.e[dof], dp)
+                J[:, dof : dof + 1] = cross(self.data.e[dof], dp)
             else:
-                J[:,dof:dof+1] = self.data.e[dof]
+                J[:, dof : dof + 1] = self.data.e[dof]
         return J
+
     def Jw(self):
-        J = np.zeros((3,self.dofs))
+        J = np.zeros((3, self.dofs))
         for dof in range(self.dofs):
-            if (self.data.type[dof] == 'revolute'):
-                J[:,dof:dof+1] = self.data.e[dof]
+            if self.data.type[dof] == "revolute":
+                J[:, dof : dof + 1] = self.data.e[dof]
             else:
-                J[:,dof:dof+1] = np.zeros((3,1))
+                J[:, dof : dof + 1] = np.zeros((3, 1))
         return J
 
     # All-in-one call.
@@ -314,20 +325,21 @@ class KinematicChain():
 def main(args=None):
     # Initialize ROS and the node.
     rclpy.init(args=args)
-    node = Node('kintest')
+    node = Node("kintest")
 
     # Set up the kinematic chain object  with the expected joints.
-    jointnames = ['theta1', 'theta2', 'theta3', 'theta4']
-    chain = KinematicChain(node, 'world', 'tip', jointnames)
+    jointnames = ["theta1", "theta2", "theta3", "theta4"]
+    chain = KinematicChain(node, "world", "tip", jointnames)
 
     # Define the test cases.
     qtest = [
-        np.radians(np.array([  0,   0,   0,   0]).reshape((4,1))),
-        np.radians(np.array([  0,   0,  90,   0]).reshape((4,1))),
-        np.radians(np.array([  0,  90,   0,   0]).reshape((4,1))),
-        np.radians(np.array([ 90,  90,  90,  90]).reshape((4,1))),
-        np.radians(np.array([ 45,  45,  45,  45]).reshape((4,1))),
-        np.radians(np.array([ 30, -60,  30, -60]).reshape((4,1)))]
+        np.radians(np.array([0, 0, 0, 0]).reshape((4, 1))),
+        np.radians(np.array([0, 0, 90, 0]).reshape((4, 1))),
+        np.radians(np.array([0, 90, 0, 0]).reshape((4, 1))),
+        np.radians(np.array([90, 90, 90, 90]).reshape((4, 1))),
+        np.radians(np.array([45, 45, 45, 45]).reshape((4, 1))),
+        np.radians(np.array([30, -60, 30, -60]).reshape((4, 1))),
+    ]
 
     # Test each case.
     for q in qtest:
@@ -335,14 +347,15 @@ def main(args=None):
         chain.setjoints(q)
 
         # Print the test case.
-        np.set_printoptions(precision=3,suppress=True)
-        print('Grav for: ', q.T)
-        print('Torques : ', chain.g().T)
-        print('')
+        np.set_printoptions(precision=3, suppress=True)
+        print("Grav for: ", q.T)
+        print("Torques : ", chain.g().T)
+        print("")
 
     # Shutdown the node and ROS.
     node.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

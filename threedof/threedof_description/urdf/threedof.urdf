@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-1-g15f4949  Build Version: 1.6.7594.29634
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="threedof">
+  <!-- Create a dummy link -->
+  <link name="dummy_link"/>
+  <joint name="dummy_joint" type="fixed">
+    <parent link="dummy_link"/>
+    <child link="base_link"/>
+  </joint>
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.0276612105055666 0.0364736405430618 0.0193502608529681"
+        rpy="0 0 0" />
+      <mass
+        value="0.262076723433775" />
+      <inertia
+        ixx="0.000220856708358561"
+        ixy="-1.05921168145705E-05"
+        ixz="5.14044040712628E-08"
+        iyy="0.000172445912581285"
+        iyz="7.37057571153998E-08"
+        izz="0.000383263970019412" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://threedof_description/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://threedof_description/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="pan_link">
+    <inertial>
+      <origin
+        xyz="0.0137237788302449 -0.000932626500550461 0.0667057236936696"
+        rpy="0 0 0" />
+      <mass
+        value="0.404419700854984" />
+      <inertia
+        ixx="0.000573112473260583"
+        ixy="-8.01776571247622E-08"
+        ixz="-8.07467524368062E-05"
+        iyy="0.000482847576887068"
+        iyz="-6.68647339531926E-06"
+        izz="0.000265575012766213" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://threedof_description/meshes/pan_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://threedof_description/meshes/pan_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="pan_joint"
+    type="continuous">
+    <origin
+      xyz="0.04 0.038 0.04375"
+      rpy="0 0 0.025773" />
+    <parent
+      link="base_link" />
+    <child
+      link="pan_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="middle_link">
+    <inertial>
+      <origin
+        xyz="0.415650353107279 0.00120762358737104 -0.00769170101726783"
+        rpy="0 0 0" />
+      <mass
+        value="0.234421224693045" />
+      <inertia
+        ixx="8.64060387924843E-05"
+        ixy="4.68773807877774E-06"
+        ixz="7.25304082597082E-08"
+        iyy="0.00217126308021416"
+        iyz="7.37054854293414E-08"
+        izz="0.00224950758834068" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://threedof_description/meshes/middle_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://threedof_description/meshes/middle_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="middle_joint"
+    type="continuous">
+    <origin
+      xyz="-0.014 0 0.1"
+      rpy="-1.5708 -1.5686 1.5708" />
+    <parent
+      link="pan_link" />
+    <child
+      link="middle_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="penguin_link">
+    <inertial>
+      <origin
+        xyz="0.122333312006513 0.00316302895860443 0.00317655846010947"
+        rpy="0 0 0" />
+      <mass
+        value="0.35977996050851" />
+      <inertia
+        ixx="0.000582491930544016"
+        ixy="-1.88665830020526E-05"
+        ixz="-4.19017509082489E-08"
+        iyy="0.00348080817040474"
+        iyz="-3.84288001873629E-08"
+        izz="0.00406088372050544" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://threedof_description/meshes/penguin_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://threedof_description/meshes/penguin_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="penguin_joint"
+    type="continuous">
+    <origin
+      xyz="0.504 0 -0.03"
+      rpy="-3.1416 0 -0.015155" />
+    <parent
+      link="middle_link" />
+    <child
+      link="penguin_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+</robot>

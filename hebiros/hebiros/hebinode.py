@@ -19,25 +19,25 @@ import hebi
 import numpy as np
 import rclpy
 
-from time      import sleep
+from time import sleep
 from traceback import print_exc
 
-from rclpy.node         import Node
-from rclpy.parameter    import Parameter
+from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rcl_interfaces.msg import ParameterDescriptor
 from rcl_interfaces.msg import ParameterType
 
-from sensor_msgs.msg    import JointState
+from sensor_msgs.msg import JointState
 
 
 #
 #   Definitions
 #
-FAMILY   = 'robotlab'
-RATE     = 100.0        # Hertz
-LIFETIME =  50.0        # ms
+FAMILY = "robotlab"
+RATE = 100.0  # Hertz
+LIFETIME = 50.0  # ms
 
-WATCHDOGDT = 0.2        # Watchdog Time step (seconds)
+WATCHDOGDT = 0.2  # Watchdog Time step (seconds)
 
 
 #
@@ -62,26 +62,27 @@ class HebiNode(Node):
 
         # Feedback: Create a feedback message, a publisher to send the
         # joint states, and a HEBI feeedback handler to drive this.
-        self.fbktime     = self.get_clock().now()
-        self.fbkmsg      = JointState()
-        self.fbkmsg.name = self.joints   # Set to the joint names
+        self.fbktime = self.get_clock().now()
+        self.fbkmsg = JointState()
+        self.fbkmsg.name = self.joints  # Set to the joint names
 
-        self.pub = self.create_publisher(JointState, '/joint_states', 10)
+        self.pub = self.create_publisher(JointState, "/joint_states", 10)
 
         self.group.add_feedback_handler(self.feedbackCB)
 
         # Commands: Create a HEBI command structure and subscribe to
         # the joint command messages to drive this.
-        self.cmd  = hebi.GroupCommand(self.group.size)
+        self.cmd = hebi.GroupCommand(self.group.size)
         self.nans = np.full(self.N, np.nan)
 
         self.sub = self.create_subscription(
-            JointState, '/joint_commands', self.commandCB, 10)
+            JointState, "/joint_commands", self.commandCB, 10
+        )
 
         # Finally create a watchdog timer to check the HEBI connection.
         self.watchdog = self.create_timer(WATCHDOGDT, self.watchdogCB)
 
-        # raise Exception("End") # Test: end without spinning 
+        # raise Exception("End") # Test: end without spinning
 
     # Shutdown
     def shutdown(self):
@@ -91,26 +92,31 @@ class HebiNode(Node):
         self.destroy_timer(self.watchdog)
         self.destroy_node()
 
-
     # Grab the ROS parameters.
     def readparameters(self):
         # Declare the parameters.
-        STRING      = ParameterDescriptor(type=ParameterType.PARAMETER_STRING)
+        STRING = ParameterDescriptor(type=ParameterType.PARAMETER_STRING)
         STRINGARRAY = ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY)
-        DOUBLE      = ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE)
-        self.declare_parameter('family',   descriptor=STRING, value=FAMILY)
-        self.declare_parameter('motors',   descriptor=STRINGARRAY)
-        self.declare_parameter('joints',   descriptor=STRINGARRAY)
-        self.declare_parameter('rate',     descriptor=DOUBLE, value=RATE)
-        self.declare_parameter('lifetime', descriptor=DOUBLE, value=LIFETIME)
-        
+        DOUBLE = ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE)
+        self.declare_parameter("family", descriptor=STRING, value=FAMILY)
+        self.declare_parameter("motors", descriptor=STRINGARRAY)
+        self.declare_parameter("joints", descriptor=STRINGARRAY)
+        self.declare_parameter("rate", descriptor=DOUBLE, value=RATE)
+        self.declare_parameter("lifetime", descriptor=DOUBLE, value=LIFETIME)
+
         # Get the parameters.
-        self.family   = self.get_parameter('family').get_parameter_value().string_value
-        self.motors   = self.get_parameter('motors').get_parameter_value().string_array_value
-        self.joints   = self.get_parameter('joints').get_parameter_value().string_array_value
-        self.rate     = self.get_parameter('rate').get_parameter_value().double_value
-        self.lifetime = self.get_parameter('lifetime').get_parameter_value().double_value
-        self.N        = len(self.joints)
+        self.family = self.get_parameter("family").get_parameter_value().string_value
+        self.motors = (
+            self.get_parameter("motors").get_parameter_value().string_array_value
+        )
+        self.joints = (
+            self.get_parameter("joints").get_parameter_value().string_array_value
+        )
+        self.rate = self.get_parameter("rate").get_parameter_value().double_value
+        self.lifetime = (
+            self.get_parameter("lifetime").get_parameter_value().double_value
+        )
+        self.N = len(self.joints)
 
         # Check the parameters for consistency.
         if len(self.motors) == 0:
@@ -127,11 +133,11 @@ class HebiNode(Node):
         self.get_logger().info("Selecting...")
         self.get_logger().info("HEBI family  '%s'" % self.family)
         for i in range(self.N):
-            self.get_logger().info("HEBI motor %ld '%s' = joint '%s'" %
-                (i, self.motors[i], self.joints[i]))
+            self.get_logger().info(
+                "HEBI motor %ld '%s' = joint '%s'" % (i, self.motors[i], self.joints[i])
+            )
         self.get_logger().info("HEBI update rate %3.0fHz" % self.rate)
         self.get_logger().info("HEBI command lifetime %3.0fms" % self.lifetime)
-
 
     # Locate the HEBI actuators
     def hebilookup(self):
@@ -145,8 +151,10 @@ class HebiNode(Node):
             self.get_logger().info("No HEBIs located.")
         else:
             for entry in self.lookup.entrylist:
-                self.get_logger().info("Located family '%s' name '%s' at address %s" %
-                    (entry.family, entry.name, entry.mac_address))
+                self.get_logger().info(
+                    "Located family '%s' name '%s' at address %s"
+                    % (entry.family, entry.name, entry.mac_address)
+                )
 
     # Connect to the HEBI group to send commands/receive feedback.
     def hebiconnect(self):
@@ -170,7 +178,6 @@ class HebiNode(Node):
         if rate > 0.0:
             self.group.feedback_frequency = rate
 
-
     # HEBI feedback callback - send feedback on ROS message.
     def feedbackCB(self, fbk):
         # Grab the current time.
@@ -178,9 +185,9 @@ class HebiNode(Node):
 
         # Build up the message and publish.  The joint names are preset.
         self.fbkmsg.header.stamp = self.fbktime.to_msg()
-        self.fbkmsg.position     = fbk.position.tolist()
-        self.fbkmsg.velocity     = fbk.velocity.tolist()
-        self.fbkmsg.effort       = fbk.effort.tolist()
+        self.fbkmsg.position = fbk.position.tolist()
+        self.fbkmsg.velocity = fbk.velocity.tolist()
+        self.fbkmsg.effort = fbk.effort.tolist()
         self.pub.publish(self.fbkmsg)
 
         # Reset the watchdog.
@@ -194,18 +201,22 @@ class HebiNode(Node):
             return
 
         # Check the command dimensions.
-        l  = self.N
+        l = self.N
         lp = len(cmdmsg.position)
         lv = len(cmdmsg.velocity)
         le = len(cmdmsg.effort)
-        if not (lp==0 or lp==l) or not (lv==0 or lv==l) or not (le==0 or le==l):
+        if (
+            not (lp == 0 or lp == l)
+            or not (lv == 0 or lv == l)
+            or not (le == 0 or le == l)
+        ):
             self.get_logger().warn("Illegal length of pos/vel/eff commands!")
             return
 
         # Copy the commands.
-        self.cmd.position = self.nans if (lp==0) else np.array(cmdmsg.position)
-        self.cmd.velocity = self.nans if (lv==0) else np.array(cmdmsg.velocity)
-        self.cmd.effort   = self.nans if (le==0) else np.array(cmdmsg.effort)
+        self.cmd.position = self.nans if (lp == 0) else np.array(cmdmsg.position)
+        self.cmd.velocity = self.nans if (lv == 0) else np.array(cmdmsg.velocity)
+        self.cmd.effort = self.nans if (le == 0) else np.array(cmdmsg.effort)
 
         # And send.
         self.group.send_command(self.cmd)
@@ -213,7 +224,6 @@ class HebiNode(Node):
     # Watchdog callback
     def watchdogCB(self):
         self.get_logger().warn("Not getting HEBI feedback - check connection")
-
 
 
 #
@@ -224,7 +234,7 @@ def main(args=None):
     rclpy.init(args=args)
 
     # Instantiate the HEBI node.
-    node = HebiNode('hebinode')
+    node = HebiNode("hebinode")
 
     # Run the startup and spin the node until interrupted.
     try:
@@ -237,6 +247,7 @@ def main(args=None):
     # Shutdown the node and ROS.
     node.shutdown()
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

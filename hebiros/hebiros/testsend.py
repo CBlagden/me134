@@ -7,14 +7,14 @@
 import numpy as np
 import rclpy
 
-from rclpy.node         import Node
-from sensor_msgs.msg    import JointState
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
 
 
 #
 #   Definitions
 #
-RATE     = 100.0        # Hertz
+RATE = 100.0  # Hertz
 
 
 #
@@ -27,21 +27,22 @@ class TestNode(Node):
         super().__init__(name)
 
         # Add a publisher to send the joint commands.
-        self.pub = self.create_publisher(JointState, '/joint_commands', 10)
+        self.pub = self.create_publisher(JointState, "/joint_commands", 10)
 
-        self.cmdmsg  = JointState()
+        self.cmdmsg = JointState()
 
         # Create a timer to keep calculating/sending commands.
-        rate       = RATE
-        self.timer = self.create_timer(1/rate, self.update)
-        self.get_logger().info("Running with dt of %f seconds (%fHz)" %
-                               (self.timer.timer_period_ns * 1e-9, rate))
+        rate = RATE
+        self.timer = self.create_timer(1 / rate, self.update)
+        self.get_logger().info(
+            "Running with dt of %f seconds (%fHz)"
+            % (self.timer.timer_period_ns * 1e-9, rate)
+        )
 
     # Shutdown
     def shutdown(self):
         # No particular cleanup, just shut down the node.
         self.destroy_node()
-
 
     # Upate - called by the timesr
     def update(self):
@@ -50,10 +51,10 @@ class TestNode(Node):
 
         # Build up the message and publish.  The joint names are preset.
         self.cmdmsg.header.stamp = self.cmdtime.to_msg()
-        self.cmdmsg.name         = ['one', 'two']
-        self.cmdmsg.position     = [1.0, 2.0]
-        self.cmdmsg.velocity     = []
-        self.cmdmsg.effort       = [0.0, 0.0]
+        self.cmdmsg.name = ["one", "two"]
+        self.cmdmsg.position = [1.0, 2.0]
+        self.cmdmsg.velocity = []
+        self.cmdmsg.effort = [0.0, 0.0]
         self.pub.publish(self.cmdmsg)
 
 
@@ -65,7 +66,7 @@ def main(args=None):
     rclpy.init(args=args)
 
     # Instantiate the TEST node.
-    node = TestNode('testsend')
+    node = TestNode("testsend")
 
     # Spin the node until interrupted.
     rclpy.spin(node)
@@ -73,6 +74,7 @@ def main(args=None):
     # Shutdown the node and ROS.
     node.shutdown()
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,4 @@
-'''
+"""
 hw3p4.py
 
    This is the solution code for HW3 Problem 4.
@@ -8,54 +8,57 @@ hw3p4.py
 
    Node:        /generator
    Publish:     /joint_states           sensor_msgs/JointState
-'''
+"""
 
 import rclpy
 import numpy as np
 
-from rclpy.node         import Node
-from sensor_msgs.msg    import JointState
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
 
-from hwsols.Segments    import Hold, Stay, GotoCubic, SplineCubic
+from hwsols.Segments import Hold, Stay, GotoCubic, SplineCubic
 
 
 #
 #   Trajectory Class
 #
-class Trajectory():
+class Trajectory:
     # Initialization.
     def __init__(self):
         # Compute the 4 solutions:
-        l1 =  1.0
-        l2 =  1.0
-        x  = -0.8
-        y  =  1.0
-        z  =  1.4
+        l1 = 1.0
+        l2 = 1.0
+        x = -0.8
+        y = 1.0
+        z = 1.4
 
-        R      = np.sqrt(x*x + y*y)
-        THETA2 = np.arccos((x*x + y*y + z*z - l1*l1 - l2*l2) / (2*l1*l2))
+        R = np.sqrt(x * x + y * y)
+        THETA2 = np.arccos((x * x + y * y + z * z - l1 * l1 - l2 * l2) / (2 * l1 * l2))
 
-        def pSol(r,theta2):
-            thetapan = np.arctan2(-x/r, y/r)
-            theta1   = (np.arctan2(z,r) -
-                        np.arctan2(l2*np.sin(theta2), l1+l2*np.cos(theta2)))
+        def pSol(r, theta2):
+            thetapan = np.arctan2(-x / r, y / r)
+            theta1 = np.arctan2(z, r) - np.arctan2(
+                l2 * np.sin(theta2), l1 + l2 * np.cos(theta2)
+            )
             return np.array([thetapan, theta1, theta2])
 
-        pA = pSol( R,  THETA2)
-        pB = pSol(-R,  THETA2)
-        pC = pSol( R, -THETA2)
+        pA = pSol(R, THETA2)
+        pB = pSol(-R, THETA2)
+        pC = pSol(R, -THETA2)
         pD = pSol(-R, -THETA2)
         print(pA, "\n", pB, "\n", pC, "\n", pD)
-        
+
         # Prepare a list of trajectory segments.
-        self.segments = [Hold(pA, 0.5),
-                         GotoCubic(pA, pB, 1.0),
-                         Hold(pB, 0.5),
-                         GotoCubic(pB, pC, 1.0),
-                         Hold(pC, 0.5),
-                         GotoCubic(pC, pD, 1.0),
-                         Hold(pD, 0.5),
-                         GotoCubic(pD, pA, 1.0)]
+        self.segments = [
+            Hold(pA, 0.5),
+            GotoCubic(pA, pB, 1.0),
+            Hold(pB, 0.5),
+            GotoCubic(pB, pC, 1.0),
+            Hold(pC, 0.5),
+            GotoCubic(pC, pD, 1.0),
+            Hold(pD, 0.5),
+            GotoCubic(pD, pA, 1.0),
+        ]
 
         # Zero the start time of the current segment.
         self.t0 = 0.0
@@ -63,12 +66,11 @@ class Trajectory():
         # Decide whether to cycle through the segments.
         self.cyclic = True
 
-
     # Declare the joint names.
     def jointnames(self):
         # Return a list of joint names
         #### YOU WILL HAVE TO LOOK AT THE URDF TO DETERMINE THESE! ####
-        return ['theta1', 'theta2', 'theta3']
+        return ["theta1", "theta2", "theta3"]
 
     # Evaluate at the given time.
     def evaluate(self, tabsolute):
@@ -94,14 +96,14 @@ class Generator(Node):
     # Initialization.
     def __init__(self):
         # Initialize the node, naming it 'generator'
-        super().__init__('generator')
+        super().__init__("generator")
 
         # Add a publisher to send the joint commands.
-        self.pub = self.create_publisher(JointState, '/joint_states', 10)
+        self.pub = self.create_publisher(JointState, "/joint_states", 10)
 
         # Wait for a connection to happen.  This isn't necessary, but
         self.get_logger().info("Waiting for a subscriber...")
-        while(not self.count_subscribers('/joint_states')):
+        while not self.count_subscribers("/joint_states"):
             pass
 
         # Set up a trajectory.
@@ -110,11 +112,10 @@ class Generator(Node):
 
         # Create a timer to keep calculating/sending commands.
         self.starttime = self.get_clock().now()
-        rate           = 100
-        self.timer     = self.create_timer(1/float(rate), self.update)
-        dt             = self.timer.timer_period_ns * 1e-9
-        self.get_logger().info("Running with dt of %f seconds (%fHz)" %
-                               (dt, rate))
+        rate = 100
+        self.timer = self.create_timer(1 / float(rate), self.update)
+        dt = self.timer.timer_period_ns * 1e-9
+        self.get_logger().info("Running with dt of %f seconds (%fHz)" % (dt, rate))
 
     # Shutdown
     def shutdown(self):
@@ -122,22 +123,21 @@ class Generator(Node):
         self.timer.destroy()
         self.destroy_node()
 
-
     # Update - send a new joint command every time step.
     def update(self):
         # Grab the current time.
         now = self.get_clock().now()
-        t   = (now - self.starttime).nanoseconds * 1e-9
+        t = (now - self.starttime).nanoseconds * 1e-9
 
         # Compute the desired joint positions and velocities for this time.
         (q, qdot) = self.trajectory.evaluate(t)
 
         # Build up a command message and publish.
         cmdmsg = JointState()
-        cmdmsg.header.stamp = now.to_msg()      # Current time
-        cmdmsg.name         = self.jointnames   # List of joint names
-        cmdmsg.position     = q                 # List of joint positions
-        cmdmsg.velocity     = qdot              # List of joint velocities
+        cmdmsg.header.stamp = now.to_msg()  # Current time
+        cmdmsg.name = self.jointnames  # List of joint names
+        cmdmsg.position = q  # List of joint positions
+        cmdmsg.velocity = qdot  # List of joint velocities
         self.pub.publish(cmdmsg)
 
 
@@ -156,6 +156,7 @@ def main(args=None):
     # Shutdown the node and ROS.
     generator.shutdown()
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()
