@@ -188,8 +188,8 @@
     </visual>
     <collision>
       <origin
-        xyz="0 0 0"
-        rpy="0 0 0" />
+       xyz="0 0 0"
+       rpy="0 0 0" />
       <geometry>
         <mesh
           filename="package://threedof_description/meshes/penguin_link.STL" />

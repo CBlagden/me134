@@ -23,6 +23,7 @@ setup(
         "console_scripts": [
             "pointandclick = threedof_demo.pointandclick:main",
             "analytic_cycle = threedof_demo.analytic_cycle:main",
+            "GotoNode = threedof_demo.interactive.GotoNode:main",
         ],
     },
 )

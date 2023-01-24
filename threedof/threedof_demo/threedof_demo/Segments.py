@@ -94,3 +94,65 @@ class Stay(Hold):
     # Use an infinite time (stay forever).
     def __init__(self, p, space="Joint"):
         Hold.__init__(self, p, math.inf, space)
+
+
+# general segment object (interface class)
+class Segment:
+    def __init__(self, T, space='Joint'):
+        self.T = T
+        self.space = space
+        pass
+
+    def evaluate(self, t):
+        pass
+
+    def get_p0(self):
+        (p0, v0) = self.evaluate(0.0)
+        return p0
+
+    def get_v0(self):
+        (p0, v0) = self.evaluate(0.0)
+        return v0
+
+    def get_pf(self):
+        (pf, vf) = self.evaluate(self.T)
+        return pf
+
+    def get_vf(self):
+        (pf, vf) = self.evaluate(self.T)
+        return vf
+
+    def space(self):
+        return self.usespace
+
+    def duration(self):
+        return self.T
+
+class QuinticSpline(Segment):
+    # Initialize.
+    def __init__(self, p0, v0, a0, pf, vf, af, T, space='joint'):
+        Segment.__init__(self, T, space)
+        # Precompute the six spline parameters.
+        self.a = p0
+        self.b = v0
+        self.c = a0
+        self.d = -10 * p0 / T ** 3 - 6 * v0 / T ** 2 - 3 * a0 / T + 10 * pf / T ** 3 - 4 * vf / T ** 2 + 0.5 * af / T
+        self.e = 15 * p0 / T ** 4 + 8 * v0 / T ** 3 + 3 * a0 / T ** 2 - 15 * pf / T ** 4 + 7 * vf / T ** 3 - 1 * af / T ** 2
+        self.f = -6 * p0 / T ** 5 - 3 * v0 / T ** 4 - 1 * a0 / T ** 3 + 6 * pf / T ** 5 - 3 * vf / T ** 4 + 0.5 * af / T ** 3
+
+    # Compute the position/velocity for a given time (w.r.t. t=0 start).
+    def evaluate(self, t):
+        # Compute and return the position and velocity.
+        p = self.a + self.b * t + self.c * t ** 2 + self.d * t ** 3 + self.e * t ** 4 + self.f * t ** 5
+        v = self.b + 2 * self.c * t + 3 * self.d * t ** 2 + 4 * self.e * t ** 3 + 5 * self.f * t ** 4
+        return (p, v)
+
+    # Report whether the given (relative) time is past the duration.
+    def completed(self, t):
+        return t >= self.T
+
+
+class Goto5(QuinticSpline):
+    # Use zero initial/final velocities/accelerations (same size as positions).
+    def __init__(self, p0, pf, T, space='koint'):
+        QuinticSpline.__init__(self, p0, 0 * p0, 0 * p0, pf, 0 * pf, 0 * pf, T, space)

@@ -1,12 +1,14 @@
 # GotoNode
 # Moves the robot along a cartesian or joint space spline.
+#
+# ros2 topic pub --once /point_cmd geometry_msgs/Point "{x: -0.2, y: 0.1, z: 0.5}"
 # 
 # Publish:
 #   /joint_commands     sensor_msgs/JointState
 # 
 # Subscribe:
 #   /joint_states       sensor_msgs/JointState
-#   /pose_cmd           geometry_msgs/Point
+#   /point_cmd           geometry_msgs/Point
 #
 # ME 134 LOS PENGUINOS
 
@@ -15,12 +17,17 @@ from rclpy.node import Node
 import rclpy.time
 
 import numpy as np
+import time
 
 from threedof_demo.KinematicChain import KinematicChain
-from threedof_demo.Segments import GotoQuintic
+from threedof_demo.Segments import Goto5
 
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg import Point
+from visualization_msgs.msg import Marker
+
+RATE = 20.0
+LAM = 10
 
 class GotoNode(Node):
     def __init__(self):
@@ -29,59 +36,139 @@ class GotoNode(Node):
         ## Class variables
         # get initial joint position sensor reading
         [self.q, self.qdot] = self.grabfbk()
-
-
         # forward kinematics
         self.chain = KinematicChain("base_link", "penguin_link")
+        # time variables
+        self.tstart = None
+        # general
+        self.curspline = None
+        self.jointnames = ["pan_joint", "middle_joint", "penguin_joint"]
 
         ## Publishers
         self.pub_jtcmd = self.create_publisher(\
                 JointState, '/joint_commands', 10)
+        self.pub_goalmarker = self.create_publisher(\
+                Marker, '/goal_marker', 10)
 
         ## Subscribers
         self.sub_jtstate = self.create_subscription(\
                 JointState, '/joint_states', self.cb_jtstate, 10)
-        self.sub_posecmd = self.create_subscription(\
+        self.sub_pointcmd = self.create_subscription(\
                 Point, '/point_cmd', self.cb_pointcmd, 10)
+
+        ## Timers
+        self.cmdtimer = self.create_timer(1 / RATE, self.cb_sendcmd)
 
 
     # callback for /joint_states
     def cb_jtstate(self, msg):
         # record the current joint posiitons
-        self.q = msg.position
-        self.qdot = msg.velocity
+        self.q = np.array(msg.position).reshape([3,1])
+        self.qdot = np.array(msg.velocity).reshape([3,1])
 
     
-    # callback for /pose_cmd
+    # callback for /point_cmd
     def cb_pointcmd(self, msg):
         # Use this to initiate/reset splines between cartesian positions
-        pd_final = list(msg)
+        pd_final = [msg.x, msg.y, msg.z]
         [pcur, _, _, _] = self.chain.fkin(self.q)
-        # spline to pd_final (10 seconds)
-        self.curspline = GotoQuntic(pcur, pd_final, 10)
+        # spline to pd_final
+        pcur = np.array(pcur).reshape([3,1])
+        pd_final = np.array(pd_final).reshape([3,1])
+        move_time = 5 #s
+        self.curspline = Goto5(pcur, pd_final, move_time, space="task")
 
         self.tstart = self.get_clock().now()
+
+        # publish the goal point
+        markermsg = Marker()
+        markermsg.header.frame_id = "/base_link"
+        markermsg.header.stamp = self.get_clock().now().to_msg()
+        markermsg.type = 2
+        markermsg.id = 0
+        markermsg.scale.x = 0.05
+        markermsg.scale.y = 0.05
+        markermsg.scale.z = 0.05
+        markermsg.color.r = 0.1
+        markermsg.color.g = 1.0
+        markermsg.color.b = 0.0
+        markermsg.color.a = 1.0
+        markermsg.pose.position.x = msg.x
+        markermsg.pose.position.y = msg.y
+        markermsg.pose.position.z = msg.z
+        self.pub_goalmarker.publish(markermsg)
+
+
+    # callback for command timer
+    def cb_sendcmd(self):
+        t = self.get_clock().now()
+        dt = 1/RATE
+        # default to holding position
+        poscmd = [float("NaN"), float("NaN"), float("NaN")]
+        velcmd = [float("NaN"), float("NaN"), float("NaN")]
+        effcmd = [float("NaN"), float("NaN"), float("NaN")] # TODO: REPLACE WITH GRAVITY MODEL
+
+        # check if there is a spline to run
+        if (self.curspline != None):
+            # check if completed
+            deltat = (t - self.tstart).nanoseconds / 1000000000.
+            if (self.curspline.completed(deltat)):
+                # Hold!
+                pass
+            else:
+                # do different things depending on the space
+                if (self.curspline.space == 'joint'):
+                    # TODO (@JOAQUIN!!)
+                    pass
+                elif (self.curspline.space == 'task'):
+                    [xd, xd_dot] = self.curspline.evaluate(deltat)
+
+                    # compute forward kinematics
+                    [xcurr, _, Jv, _] = self.chain.fkin(self.q)
+
+                    # get qdot with J qdot = xdot
+                    ex = xd - xcurr
+                    qd_dot = np.linalg.pinv(Jv) @ (xd_dot + LAM * ex)
+                    qd = self.q + qd_dot * dt
+                    
+                    # save commands
+                    poscmd = list(qd.reshape([3]))
+                    velcmd = list(qd_dot.reshape([3]))
+                    effcmd = [float("NaN"), float("NaN"), float("NaN")] # TODO: REPLACE WITH GRAVITY MODEL
+                    print(poscmd, velcmd)
+        else:
+            # Hold!
+            pass
+
+        # Publish!
+        cmdmsg = JointState()
+        cmdmsg.header.stamp = t.to_msg()
+        cmdmsg.name = self.jointnames
+        cmdmsg.position = poscmd
+        cmdmsg.velocity = velcmd
+        cmdmsg.effort = effcmd
+        self.pub_jtcmd.publish(cmdmsg)
 
 
     # blocking function to grab a single feedback
     def grabfbk(self):
         # Create a temporary handler to grab the position.
-        grabpos = None
-        grabvel = None
+        self.grabpos = None
+        self.grabvel = None
         def cb(fbkmsg):
-            grabpos = list(fbkmsg.position)
-            grabvel = list(fbkmsg.velocity)
-            grabready = True
+            self.grabpos = list(fbkmsg.position)
+            self.grabvel = list(fbkmsg.velocity)
+            self.grabready = True
 
         # Temporarily subscribe to get just one message.
         sub = self.create_subscription(JointState, "/joint_states", cb, 1)
-        grabready = False
-        while not grabready:
+        self.grabready = False
+        while not self.grabready:
             rclpy.spin_once(self)
         self.destroy_subscription(sub)
 
         # Return the values.
-        return [grabpos, grabvel]
+        return [self.grabpos, self.grabvel]
 
 
 
