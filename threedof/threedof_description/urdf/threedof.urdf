@@ -209,4 +209,28 @@
     <axis
       xyz="0 0 1" />
   </joint>
+
+  <link
+    name="tip_link">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0" />
+    </inertial>
+  </link>
+  <joint
+    name="tip_joint"
+    type="fixed">
+    <origin
+      xyz="0.316 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="penguin_link" />
+    <child
+      link="tip_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
 </robot>
