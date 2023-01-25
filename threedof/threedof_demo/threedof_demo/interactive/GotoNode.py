@@ -21,13 +21,22 @@ import time
 
 from threedof_demo.KinematicChain import KinematicChain
 from threedof_demo.Segments import Goto5
+from threedof_demo.analytic_solver import get_sols
+from threedof_demo.TransformHelpers import *
 
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker
 
+from std_msgs.msg import Empty
+
 RATE = 20.0
 LAM = 10
+
+TIME = 7
+
+L1 = 0.508
+L2 = 0.316
 
 class GotoNode(Node):
     def __init__(self):
@@ -37,11 +46,11 @@ class GotoNode(Node):
         # get initial joint position sensor reading
         [self.q, self.qdot] = self.grabfbk()
         # forward kinematics
-        self.chain = KinematicChain("base_link", "penguin_link")
+        self.chain = KinematicChain("base_link", "tip_link")
         # time variables
         self.tstart = None
         # general
-        self.curspline = None
+        self.cursplines = []
         self.jointnames = ["pan_joint", "middle_joint", "penguin_joint"]
 
         ## Publishers
@@ -55,10 +64,17 @@ class GotoNode(Node):
                 JointState, '/joint_states', self.cb_jtstate, 10)
         self.sub_pointcmd = self.create_subscription(\
                 Point, '/point_cmd', self.cb_pointcmd, 10)
+        self.sub_flipcmd = self.create_subscription(Empty, '/flip', self.cb_flip, 1)
 
         ## Timers
         self.cmdtimer = self.create_timer(1 / RATE, self.cb_sendcmd)
 
+    def cb_flip(self, _):
+        self.get_logger().info("Flipping...")
+        new_q1 = np.array([self.q[0][0] - np.pi, self.q[1][0], self.q[2][0]]).reshape((3, 1))
+        self.cursplines.append(Goto5(self.q, new_q1, TIME, space='joint'))
+        new_q2 = np.array([new_q1[0][0], np.pi - new_q1[1][0], -new_q1[2][0]]).reshape((3, 1))
+        self.cursplines.append(Goto5(new_q1, new_q2, TIME, space='joint'))
 
     # callback for /joint_states
     def cb_jtstate(self, msg):
@@ -75,8 +91,8 @@ class GotoNode(Node):
         # spline to pd_final
         pcur = np.array(pcur).reshape([3,1])
         pd_final = np.array(pd_final).reshape([3,1])
-        move_time = 5 #s
-        self.curspline = Goto5(pcur, pd_final, move_time, space="task")
+        move_time = TIME #s
+        self.cursplines = [Goto5(pcur, pd_final, move_time, space="task")]
 
         self.tstart = self.get_clock().now()
 
@@ -109,19 +125,26 @@ class GotoNode(Node):
         effcmd = [float("NaN"), float("NaN"), float("NaN")] # TODO: REPLACE WITH GRAVITY MODEL
 
         # check if there is a spline to run
-        if (self.curspline != None):
+        if self.cursplines:
+            curspline = self.cursplines[0]
             # check if completed
             deltat = (t - self.tstart).nanoseconds / 1000000000.
-            if (self.curspline.completed(deltat)):
+            if (curspline.completed(deltat)):
                 # Hold!
+                self.cursplines.pop()
+                self.tstart = self.get_clock().now()
                 pass
             else:
                 # do different things depending on the space
-                if (self.curspline.space == 'joint'):
-                    # TODO (@JOAQUIN!!)
-                    pass
-                elif (self.curspline.space == 'task'):
-                    [xd, xd_dot] = self.curspline.evaluate(deltat)
+                if (curspline.space == 'joint'):
+                    [qd, qd_dot] = curspline.evaluate(deltat)
+
+                    poscmd = list(qd.reshape([3]))
+                    velcmd = list(qd_dot.reshape([3])) 
+                    effcmd = [float("NaN"), float("NaN"), float("NaN")] # TODO: REPLACE WITH GRAVITY MODEL
+                    print(poscmd, velcmd)
+                elif (curspline.space == 'task'):
+                    [xd, xd_dot] = curspline.evaluate(deltat)
 
                     # compute forward kinematics
                     [xcurr, _, Jv, _] = self.chain.fkin(self.q)
