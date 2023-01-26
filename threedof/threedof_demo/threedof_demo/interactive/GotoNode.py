@@ -59,6 +59,11 @@ class GotoNode(Node):
         ## Timers
         self.cmdtimer = self.create_timer(1 / RATE, self.cb_sendcmd)
 
+        self.a = -.1275
+        self.b = 0.
+        self.c = 2.5
+        self.d = 0.
+
 
     # callback for /joint_states
     def cb_jtstate(self, msg):
@@ -106,7 +111,7 @@ class GotoNode(Node):
         # default to holding position
         poscmd = [float("NaN"), float("NaN"), float("NaN")]
         velcmd = [float("NaN"), float("NaN"), float("NaN")]
-        effcmd = [float("NaN"), float("NaN"), float("NaN")] # TODO: REPLACE WITH GRAVITY MODEL
+        effcmd = self.gravity()
 
         # check if there is a spline to run
         if (self.curspline != None):
@@ -134,7 +139,6 @@ class GotoNode(Node):
                     # save commands
                     poscmd = list(qd.reshape([3]))
                     velcmd = list(qd_dot.reshape([3]))
-                    effcmd = [float("NaN"), float("NaN"), float("NaN")] # TODO: REPLACE WITH GRAVITY MODEL
                     print(poscmd, velcmd)
         else:
             # Hold!
@@ -170,8 +174,11 @@ class GotoNode(Node):
         # Return the values.
         return [self.grabpos, self.grabvel]
 
-
-
+    def gravity(self):
+        _, t1, t2 = list(self.q.reshape(3))
+        tau1 = self.a * np.sin(-t1 + t2) + self.b * np.cos(-t1 + t2) + self.c * np.sin(-t1) + self.d * np.cos(-t1)
+        tau2 = self.a * np.sin(-t1 + t2) + self.b * np.cos(-t1 + t2)
+        return [0., float(tau1), float(tau2)]
 
 def main(args=None):
     # intialize ROS node.
