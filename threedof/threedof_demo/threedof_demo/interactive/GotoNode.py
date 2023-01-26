@@ -38,6 +38,12 @@ TIME = 7
 L1 = 0.508
 L2 = 0.316
 
+x_off, y_off, z_off = (
+    0.04970353424430905,
+    0.050472416460127276,
+    0.12211428352936989,
+)
+
 class GotoNode(Node):
     def __init__(self):
         super().__init__('goto_node')
