@@ -26,6 +26,8 @@ from sensor_msgs.msg    import JointState
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker
 
+from std_msgs.msg import String
+
 RATE = 20.0
 LAM = 10
 
@@ -59,10 +61,33 @@ class GotoNode(Node):
         ## Timers
         self.cmdtimer = self.create_timer(1 / RATE, self.cb_sendcmd)
 
+        self.param_sub = self.create_subscription(String, '/param', self.cb_param, 1)
+
         self.a = -.1275
         self.b = 0.
         self.c = 2.5
         self.d = 0.
+
+
+    def cb_param(self, msg):
+        print(type(msg.data))
+        self.get_logger().info("Received: %s" % msg.data)
+        try:
+            var, val = msg.data.split(':')
+            val = float(val)
+        except:
+            print('Whoops!')
+        match var:
+            case 'a':
+                self.a = val
+            case 'b':
+                self.b = val
+            case 'c':
+                self.c = val
+            case 'd':
+                self.d = val
+            case _:
+                print("Whoops!")
 
 
     # callback for /joint_states
@@ -176,6 +201,13 @@ class GotoNode(Node):
 
     def gravity(self):
         _, t1, t2 = list(self.q.reshape(3))
+        self.get_logger().info("t1: %f" % float(-t1 * 180/np.pi))
+        self.get_logger().info("t2: %f" % float(t2 * 180/np.pi))
+        self.get_logger().info("sum: %f" % float((-t1 + t2) * 180/np.pi))
+        self.get_logger().info("Sin: a * %f" % float(np.sin(-t1 + t2)))
+        self.get_logger().info("Cos: b * %f" % float(np.cos(-t1 + t2)))
+        self.get_logger().info("Sin: c * %f" % float(np.sin(-t1)))
+        self.get_logger().info("Cos: d * %f" % float(np.cos(-t1)))
         tau1 = self.a * np.sin(-t1 + t2) + self.b * np.cos(-t1 + t2) + self.c * np.sin(-t1) + self.d * np.cos(-t1)
         tau2 = self.a * np.sin(-t1 + t2) + self.b * np.cos(-t1 + t2)
         return [0., float(tau1), float(tau2)]
