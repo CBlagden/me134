@@ -41,7 +41,7 @@ class GotoNode(Node):
         # time variables
         self.tstart = None
         # general
-        self.curspline = None
+        self.cursplines = []
         self.jointnames = ["pan_joint", "middle_joint", "penguin_joint"]
 
         ## Publishers
@@ -61,7 +61,7 @@ class GotoNode(Node):
 
         self.a = -.1275
         self.b = 0.
-        self.c = 2.5
+        self.c = 2.6
         self.d = 0.
 
 
@@ -81,7 +81,7 @@ class GotoNode(Node):
         pcur = np.array(pcur).reshape([3,1])
         pd_final = np.array(pd_final).reshape([3,1])
         move_time = 5 #s
-        self.curspline = Goto5(pcur, pd_final, move_time, space="task")
+        self.cursplines.append(Goto5(pcur, pd_final, move_time, space="task"))
 
         self.tstart = self.get_clock().now()
 
@@ -114,19 +114,20 @@ class GotoNode(Node):
         effcmd = [float("NaN"), float("NaN"), float("NaN")]
 
         # check if there is a spline to run
-        if (self.curspline != None):
+        if (self.cursplines):
+            curspline = self.cursplines[0]
             # check if completed
             deltat = (t - self.tstart).nanoseconds / 1000000000.
-            if (self.curspline.completed(deltat)):
-                # Hold!
-                pass
+            if (curspline.completed(deltat)):
+                self.cursplines.pop()
+                self.tstart = self.get_clock().now()
             else:
                 # do different things depending on the space
-                if (self.curspline.get_space() == 'joint'):
+                if (curspline.get_space() == 'joint'):
                     # TODO (@JOAQUIN!!)
                     pass
-                elif (self.curspline.get_space() == 'task'):
-                    [xd, xd_dot] = self.curspline.evaluate(deltat)
+                elif (curspline.get_space() == 'task'):
+                    [xd, xd_dot] = curspline.evaluate(deltat)
 
                     # compute forward kinematics
                     [xcurr, _, Jv, _] = self.chain.fkin(self.q)
