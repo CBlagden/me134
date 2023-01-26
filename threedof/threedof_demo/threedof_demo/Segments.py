@@ -122,10 +122,10 @@ class Segment:
         (pf, vf) = self.evaluate(self.T)
         return vf
 
-    def space(self):
-        return self.usespace
+    def get_space(self):
+        return self.space
 
-    def duration(self):
+    def get_duration(self):
         return self.T
 
 class QuinticSpline(Segment):

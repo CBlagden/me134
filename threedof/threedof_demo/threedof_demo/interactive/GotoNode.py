@@ -37,7 +37,7 @@ class GotoNode(Node):
         # get initial joint position sensor reading
         [self.q, self.qdot] = self.grabfbk()
         # forward kinematics
-        self.chain = KinematicChain("base_link", "penguin_link")
+        self.chain = KinematicChain("base_link", "tip_link")
         # time variables
         self.tstart = None
         # general
@@ -111,7 +111,7 @@ class GotoNode(Node):
         # default to holding position
         poscmd = [float("NaN"), float("NaN"), float("NaN")]
         velcmd = [float("NaN"), float("NaN"), float("NaN")]
-        effcmd = self.gravity()
+        effcmd = [float("NaN"), float("NaN"), float("NaN")]
 
         # check if there is a spline to run
         if (self.curspline != None):
@@ -122,10 +122,10 @@ class GotoNode(Node):
                 pass
             else:
                 # do different things depending on the space
-                if (self.curspline.space == 'joint'):
+                if (self.curspline.get_space() == 'joint'):
                     # TODO (@JOAQUIN!!)
                     pass
-                elif (self.curspline.space == 'task'):
+                elif (self.curspline.get_space() == 'task'):
                     [xd, xd_dot] = self.curspline.evaluate(deltat)
 
                     # compute forward kinematics
@@ -141,8 +141,7 @@ class GotoNode(Node):
                     velcmd = list(qd_dot.reshape([3]))
                     print(poscmd, velcmd)
         else:
-            # Hold!
-            pass
+            effcmd = self.gravity()
 
         # Publish!
         cmdmsg = JointState()
