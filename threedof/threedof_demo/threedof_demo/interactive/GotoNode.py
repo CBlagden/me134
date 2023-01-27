@@ -20,7 +20,7 @@ import numpy as np
 import time
 
 from threedof_demo.KinematicChain import KinematicChain
-from threedof_demo.Segments import Goto5, Hold
+from threedof_demo.Segments import Goto5, Hold, Stay
 
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg import Point, PoseArray
@@ -73,10 +73,6 @@ class GotoNode(Node):
 
         self.mode = 'pan_forward'
 
-        self.points = []
-        self.curr_point = None
-
-
     # callback for /joint_states
     def cb_jtstate(self, msg):
         # record the current joint posiitons
@@ -92,14 +88,36 @@ class GotoNode(Node):
         # spline to pd_final
         pcur = np.array(pcur).reshape([3,1])
         pd_final = np.array(pd_final).reshape([3,1])
-        self.points.append(pd_final)
-
+        
+        self.cursplines.append(Goto5(pcur, pd_final, MOVE_TIME, space='task'))
+        self.cursplines.append(Stay(pcur, space='task'))
         self.tstart = self.get_clock().now()
 
         # publish the goal point
         markermsg = publish_point(msg, self.get_clock().now().to_msg())
         self.pub_goalmarker.publish(markermsg)
 
+    # callback for /line_cmd
+    def cb_linecmd(self, msg):
+        # Use this to initiate/reset splines between cartesian positions
+        pd1_final = [msg.pt1.x, msg.pt1.y, msg.pt1.z]
+        pd2_final = [msg.pt2.x, msg.pt2.y, msg.pt2.z]
+        [pcur, _, _, _] = self.chain.fkin(self.q)
+        # spline to pd_final
+        pcur = np.array(pcur).reshape([3,1])
+        pd1_final = np.array(pd1_final).reshape([3,1])
+        pd2_final = np.array(pd2_final).reshape([3,1])
+
+        self.tstart = self.get_clock().now()
+        self.cursplines.append(Goto5(pcur, pd1_final, MOVE_TIME, space='task'))
+        for _ in range(5):
+            self.cursplines.append(Goto5(pcur, pd2_final, MOVE_TIME, space='task'))
+            self.cursplines.append(Goto5(pcur, pd1_final, MOVE_TIME, space='task'))
+        self.cursplines.append(Stay(pd1_final, space='task'))
+
+        # publish the goal point
+        markermsg = publish_point(msg, self.get_clock().now().to_msg())
+        self.pub_goalmarker.publish(markermsg)
 
     # callback for command timer
     def cb_sendcmd(self):
