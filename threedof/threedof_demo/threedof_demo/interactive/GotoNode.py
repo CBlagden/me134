@@ -23,13 +23,16 @@ from threedof_demo.KinematicChain import KinematicChain
 from threedof_demo.Segments import Goto5, Hold
 
 from sensor_msgs.msg    import JointState
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PoseArray
 from visualization_msgs.msg import Marker
 
 from threedof_demo.analytic_solver import get_sols
+from rviz_helper import publish_point
 
 RATE = 100.0
 LAM = 10
+
+MOVE_TIME = 5
 
 class GotoNode(Node):
     def __init__(self):
@@ -57,6 +60,8 @@ class GotoNode(Node):
                 JointState, '/joint_states', self.cb_jtstate, 10)
         self.sub_pointcmd = self.create_subscription(\
                 Point, '/point_cmd', self.cb_pointcmd, 10)
+        self.sub_pointcmd = self.create_subscription(\
+                PoseArray, '/line_cmd', self.cb_pointcmd, 10)
 
         ## Timers
         self.cmdtimer = self.create_timer(1 / RATE, self.cb_sendcmd)
@@ -65,6 +70,11 @@ class GotoNode(Node):
         self.b = 0.
         self.c = 2.5
         self.d = 0.
+
+        self.mode = 'pan_forward'
+
+        self.points = []
+        self.curr_point = None
 
 
     # callback for /joint_states
@@ -82,28 +92,12 @@ class GotoNode(Node):
         # spline to pd_final
         pcur = np.array(pcur).reshape([3,1])
         pd_final = np.array(pd_final).reshape([3,1])
-        move_time = 5 #s
-        self.cursplines.append(Goto5(pcur, pd_final, move_time, space="task"))
-        self.cursplines.append(Hold(pd_final, move_time, space="task"))
+        self.points.append(pd_final)
 
         self.tstart = self.get_clock().now()
 
         # publish the goal point
-        markermsg = Marker()
-        markermsg.header.frame_id = "/base_link"
-        markermsg.header.stamp = self.get_clock().now().to_msg()
-        markermsg.type = 2
-        markermsg.id = 0
-        markermsg.scale.x = 0.05
-        markermsg.scale.y = 0.05
-        markermsg.scale.z = 0.05
-        markermsg.color.r = 0.1
-        markermsg.color.g = 1.0
-        markermsg.color.b = 0.0
-        markermsg.color.a = 1.0
-        markermsg.pose.position.x = msg.x
-        markermsg.pose.position.y = msg.y
-        markermsg.pose.position.z = msg.z
+        markermsg = publish_point(msg, self.get_clock().now().to_msg())
         self.pub_goalmarker.publish(markermsg)
 
 
