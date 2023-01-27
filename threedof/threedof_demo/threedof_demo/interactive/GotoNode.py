@@ -26,7 +26,7 @@ from sensor_msgs.msg    import JointState
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker
 
-RATE = 20.0
+RATE = 100.0
 LAM = 10
 
 class GotoNode(Node):
@@ -41,7 +41,7 @@ class GotoNode(Node):
         # time variables
         self.tstart = None
         # general
-        self.curspline = None
+        self.cursplines = []
         self.jointnames = ["pan_joint", "middle_joint", "penguin_joint"]
 
         ## Publishers
@@ -111,22 +111,23 @@ class GotoNode(Node):
         # default to holding position
         poscmd = [float("NaN"), float("NaN"), float("NaN")]
         velcmd = [float("NaN"), float("NaN"), float("NaN")]
-        effcmd = [float("NaN"), float("NaN"), float("NaN")]
+        effcmd = self.gravity()
 
         # check if there is a spline to run
-        if (self.curspline != None):
+        if (self.cursplines):
             # check if completed
+            curspline = self.cursplines[0]
             deltat = (t - self.tstart).nanoseconds / 1000000000.
-            if (self.curspline.completed(deltat)):
-                # Hold!
-                pass
+            if (curspline.completed(deltat)):
+                self.tstart = self.get_clock().now()
+                self.cursplines.pop(0)
             else:
                 # do different things depending on the space
-                if (self.curspline.get_space() == 'joint'):
+                if (curspline.get_space() == 'joint'):
                     # TODO (@JOAQUIN!!)
                     pass
-                elif (self.curspline.get_space() == 'task'):
-                    [xd, xd_dot] = self.curspline.evaluate(deltat)
+                elif (curspline.get_space() == 'task'):
+                    [xd, xd_dot] = curspline.evaluate(deltat)
 
                     # compute forward kinematics
                     [xcurr, _, Jv, _] = self.chain.fkin(self.q)
