@@ -26,6 +26,8 @@ from sensor_msgs.msg    import JointState
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker
 
+from analytic_solver import get_sols
+
 RATE = 100.0
 LAM = 10
 
