@@ -23,16 +23,18 @@ from threedof_demo.KinematicChain import KinematicChain
 from threedof_demo.Segments import Goto5, Hold, Stay
 
 from sensor_msgs.msg    import JointState
-from geometry_msgs.msg import Point, PoseArray
+from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker
+from std_msgs.msg import Empty, String
 
-from threedof_demo.analytic_solver import get_sols
-from rviz_helper import publish_point
+from threedof_demo.analytic_solver import get_sol
+from threedof_demo.rviz_helper import create_pt_marker
 
 RATE = 100.0
 LAM = 10
 
 MOVE_TIME = 5
+NUM_LINE_REPETITIONS = 20
 
 class GotoNode(Node):
     def __init__(self):
@@ -45,6 +47,7 @@ class GotoNode(Node):
         self.chain = KinematicChain("base_link", "tip_link")
         # time variables
         self.tstart = None
+        self.pre_flip_dt = None
         # general
         self.cursplines = []
         self.jointnames = ["pan_joint", "middle_joint", "penguin_joint"]
@@ -60,8 +63,9 @@ class GotoNode(Node):
                 JointState, '/joint_states', self.cb_jtstate, 10)
         self.sub_pointcmd = self.create_subscription(\
                 Point, '/point_cmd', self.cb_pointcmd, 10)
-        self.sub_pointcmd = self.create_subscription(\
-                PoseArray, '/line_cmd', self.cb_pointcmd, 10)
+        self.sub_linecmd = self.create_subscription(\
+                String, '/line_cmd', self.cb_linecmd, 10)
+        self.sub_flipcmd = self.create_subscription(Empty, '/flip_cmd', self.cb_flip, 1)
 
         ## Timers
         self.cmdtimer = self.create_timer(1 / RATE, self.cb_sendcmd)
@@ -72,6 +76,7 @@ class GotoNode(Node):
         self.d = 0.
 
         self.mode = 'pan_forward'
+        self.flipping = False
 
     # callback for /joint_states
     def cb_jtstate(self, msg):
@@ -90,18 +95,19 @@ class GotoNode(Node):
         pd_final = np.array(pd_final).reshape([3,1])
         
         self.cursplines.append(Goto5(pcur, pd_final, MOVE_TIME, space='task'))
-        self.cursplines.append(Stay(pcur, space='task'))
+        self.cursplines.append(Stay(pd_final, space='task'))
         self.tstart = self.get_clock().now()
 
         # publish the goal point
-        markermsg = publish_point(msg, self.get_clock().now().to_msg())
+        markermsg = create_pt_marker(msg, self.get_clock().now().to_msg())
         self.pub_goalmarker.publish(markermsg)
 
     # callback for /line_cmd
     def cb_linecmd(self, msg):
         # Use this to initiate/reset splines between cartesian positions
-        pd1_final = [msg.pt1.x, msg.pt1.y, msg.pt1.z]
-        pd2_final = [msg.pt2.x, msg.pt2.y, msg.pt2.z]
+        x1, y1, z1, x2, y2, z2 = map(float, msg.data.split('x'))
+        pd1_final = [x1, y1, z1]
+        pd2_final = [x2, y2, z2]
         [pcur, _, _, _] = self.chain.fkin(self.q)
         # spline to pd_final
         pcur = np.array(pcur).reshape([3,1])
@@ -110,16 +116,37 @@ class GotoNode(Node):
 
         self.tstart = self.get_clock().now()
         self.cursplines.append(Goto5(pcur, pd1_final, MOVE_TIME, space='task'))
-        for _ in range(5):
-            self.cursplines.append(Goto5(pcur, pd2_final, MOVE_TIME, space='task'))
-            self.cursplines.append(Goto5(pcur, pd1_final, MOVE_TIME, space='task'))
+        for _ in range(NUM_LINE_REPETITIONS):
+            self.cursplines.append(Goto5(pd1_final, pd2_final, MOVE_TIME, space='task'))
+            self.cursplines.append(Goto5(pd2_final, pd1_final, MOVE_TIME, space='task'))
         self.cursplines.append(Stay(pd1_final, space='task'))
 
         # publish the goal point
-        markermsg = publish_point(msg, self.get_clock().now().to_msg())
-        self.pub_goalmarker.publish(markermsg)
+        markermsg1 = create_pt_marker(x1, y1, z1, self.get_clock().now().to_msg())
+        markermsg2 = create_pt_marker(x2, y2, z2, self.get_clock().now().to_msg())
+        self.pub_goalmarker.publish(markermsg1)
+        self.pub_goalmarker.publish(markermsg2)
 
-    # callback for command timer
+    # callback for /flip_cmd
+    def cb_flip(self, _):
+        xcurr, _, _, _ = self.chain.fkin(self.q)
+        x = float(xcurr[0, 0])
+        y = float(xcurr[1, 0])
+        z = float(xcurr[2, 0])
+        self.get_logger().info("Flipping...")
+        if self.mode == 'pan_forward':
+            jt_f = get_sol(x, y, z, 'pan_backward')
+            self.mode = 'pan_backward'
+        elif self.mode == 'pan_backward':
+            jt_f = get_sol(x, y, z, 'pan_forward')
+            self.mode = 'pan_forward'
+        jt_f = np.array(jt_f).reshape([3,1])
+        self.cursplines.insert(0, Goto5(self.q, jt_f, MOVE_TIME, space='joint'))
+
+        self.pre_flip_dt = self.get_clock().now() - self.tstart
+        self.tstart = self.get_clock().now()
+        self.flipping = True
+
     def cb_sendcmd(self):
         t = self.get_clock().now()
         dt = 1/RATE
@@ -134,7 +161,10 @@ class GotoNode(Node):
             curspline = self.cursplines[0]
             deltat = (t - self.tstart).nanoseconds / 1000000000.
             if (curspline.completed(deltat)):
-                self.tstart = self.get_clock().now()
+                if self.flipping:
+                    self.flipping = False
+                    self.tstart = t - self.pre_flip_dt
+                else: self.tstart = t
                 self.cursplines.pop(0)
             else:
                 # do different things depending on the space
@@ -197,6 +227,12 @@ class GotoNode(Node):
         tau1 = self.a * np.sin(-t1 + t2) + self.b * np.cos(-t1 + t2) + self.c * np.sin(-t1) + self.d * np.cos(-t1)
         tau2 = self.a * np.sin(-t1 + t2) + self.b * np.cos(-t1 + t2)
         return [0., float(tau1), float(tau2)]
+    
+    def log(self, to_log):
+        self.get_logger().info(to_log)
+    
+    def log_pos(self):
+        self.log("pos: %f, %f, %f" % (self.q[0] * 180/np.pi, self.q[1] * 180/np.pi, self.q[2] * 180/np.pi))
 
 def main(args=None):
     # intialize ROS node.
