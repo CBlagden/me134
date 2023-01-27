@@ -125,8 +125,11 @@ class GotoNode(Node):
             else:
                 # do different things depending on the space
                 if (curspline.get_space() == 'joint'):
-                    # TODO (@JOAQUIN!!)
-                    pass
+                    [qd, qd_dot] = curspline.evaluate(deltat)
+
+                    poscmd = list(qd.reshape([3]))
+                    velcmd = list(qd_dot.reshape([3])) 
+                    print(poscmd, velcmd)
                 elif (curspline.get_space() == 'task'):
                     [xd, xd_dot] = curspline.evaluate(deltat)
 
