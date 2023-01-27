@@ -20,7 +20,7 @@ import numpy as np
 import time
 
 from threedof_demo.KinematicChain import KinematicChain
-from threedof_demo.Segments import Goto5
+from threedof_demo.Segments import Goto5, Hold
 
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg import Point
@@ -81,7 +81,8 @@ class GotoNode(Node):
         pcur = np.array(pcur).reshape([3,1])
         pd_final = np.array(pd_final).reshape([3,1])
         move_time = 5 #s
-        self.curspline = Goto5(pcur, pd_final, move_time, space="task")
+        self.cursplines.append(Goto5(pcur, pd_final, move_time, space="task"))
+        self.cursplines.append(Hold(pd_final, move_time, space="task"))
 
         self.tstart = self.get_clock().now()
 
