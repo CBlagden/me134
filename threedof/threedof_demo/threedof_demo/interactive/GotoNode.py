@@ -23,7 +23,7 @@ from threedof_demo.KinematicChain import KinematicChain
 from threedof_demo.Segments import Goto5, Hold, Stay
 
 from sensor_msgs.msg    import JointState
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PointStamped
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Empty, String
 
@@ -57,6 +57,10 @@ class GotoNode(Node):
                 JointState, '/joint_commands', 10)
         self.pub_goalmarker = self.create_publisher(\
                 Marker, '/goal_marker', 10)
+        self.pub_cartcmd = self.create_publisher(\
+                PointStamped, '/cart_commands', 10)
+        self.pub_cartstate = self.create_publisher(\
+                PointStamped, '/cart_states', 10)
 
         ## Subscribers
         self.sub_jtstate = self.create_subscription(\
@@ -87,6 +91,8 @@ class GotoNode(Node):
     
     # callback for /point_cmd
     def cb_pointcmd(self, msg):
+        # reset spline list
+        self.cursplines = []
         # Use this to initiate/reset splines between cartesian positions
         pd_final = [msg.x, msg.y, msg.z]
         [pcur, _, _, _] = self.chain.fkin(self.q)
@@ -95,15 +101,18 @@ class GotoNode(Node):
         pd_final = np.array(pd_final).reshape([3,1])
         
         self.cursplines.append(Goto5(pcur, pd_final, MOVE_TIME, space='task'))
+        # self.cursplines.append(Hold(pd_final, MOVE_TIME, space='task'))
         self.cursplines.append(Stay(pd_final, space='task'))
         self.tstart = self.get_clock().now()
 
         # publish the goal point
-        markermsg = create_pt_marker(msg, self.get_clock().now().to_msg())
+        markermsg = create_pt_marker(msg.x, msg.y, msg.z, self.get_clock().now().to_msg())
         self.pub_goalmarker.publish(markermsg)
 
     # callback for /line_cmd
     def cb_linecmd(self, msg):
+        # reset spline list
+        self.cursplines = []
         # Use this to initiate/reset splines between cartesian positions
         x1, y1, z1, x2, y2, z2 = map(float, msg.data.split('x'))
         pd1_final = [x1, y1, z1]
@@ -188,7 +197,21 @@ class GotoNode(Node):
                     # save commands
                     poscmd = list(qd.reshape([3]))
                     velcmd = list(qd_dot.reshape([3]))
-                    print(poscmd, velcmd)
+
+                    # Publish joint states
+                    msg = PointStamped()
+                    msg.header.stamp = t.to_msg()
+                    msg.point.x = xd[0,0]
+                    msg.point.y = xd[1,0]
+                    msg.point.z = xd[2,0]
+                    self.pub_cartcmd.publish(msg)
+
+                    msg2 = PointStamped()
+                    msg2.header.stamp = t.to_msg()
+                    msg2.point.x = xcurr[0,0]
+                    msg2.point.y = xcurr[1,0]
+                    msg2.point.z = xcurr[2,0]
+                    self.pub_cartstate.publish(msg2)
         else:
             effcmd = self.gravity()
 

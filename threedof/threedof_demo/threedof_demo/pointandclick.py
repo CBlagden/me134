@@ -13,7 +13,7 @@ from threedof_demo.KinematicChain import KinematicChain as KinematicChain
 import numpy as np
 from threedof_demo.Segments import GotoCubic
 
-RATE = 20.0  # Hz
+RATE = 100.0  # Hz
 
 
 class PointAndClickNode(Node):
