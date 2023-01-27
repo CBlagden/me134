@@ -26,7 +26,7 @@ from sensor_msgs.msg    import JointState
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import Marker
 
-from analytic_solver import get_sols
+from threedof_demo.analytic_solver import get_sols
 
 RATE = 100.0
 LAM = 10
@@ -181,7 +181,7 @@ class GotoNode(Node):
         return [self.grabpos, self.grabvel]
 
     def gravity(self):
-        _, t1, t2 = list(self.q.reshape(3))
+        _, t1, t2 = self.q
         tau1 = self.a * np.sin(-t1 + t2) + self.b * np.cos(-t1 + t2) + self.c * np.sin(-t1) + self.d * np.cos(-t1)
         tau2 = self.a * np.sin(-t1 + t2) + self.b * np.cos(-t1 + t2)
         return [0., float(tau1), float(tau2)]

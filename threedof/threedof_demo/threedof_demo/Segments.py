@@ -54,11 +54,11 @@ class SplineCubic:
         self.usespace = space
 
     # Return the segment's space
-    def space(self):
+    def get_space(self):
         return self.usespace
 
     # Report the segment's duration (time length).
-    def duration(self):
+    def get_duration(self):
         return self.T
 
     # Report whether the given (relative) time is past the duration.
