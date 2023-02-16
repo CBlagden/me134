@@ -1,0 +1,3 @@
+std_msgs/Header header
+builtin_interfaces/Duration move_time
+geometry_msgs/Point goal

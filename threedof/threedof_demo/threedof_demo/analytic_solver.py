@@ -48,6 +48,17 @@ def filter_sols(sols, pan_mode):
     
     raise Exception('Not a valid pan mode: must be either pan_forward or pan_backward')
 
-def get_sol(x, y, z, pan_mode = 'pan_forward'):
+def get_anal_sol(x, y, z, pan_mode = 'pan_forward'):
     sols = get_sols(x, y, z)
     return filter_sols(sols, pan_mode)
+
+def get_sol(x, y, z, chain, pan_mode = 'pan_forward'):
+    q = get_anal_sol(x, y, z, pan_mode)
+    q = np.array(q).reshape(3, 1)
+    xgoal = np.array([x, y, z]).reshape(3, 1)
+
+    for _ in range(10):
+        [x, _, Jv, _] = self.chain.fkin(q)
+        q += np.linalg.pinv(Jv) @ (xgoal - x)
+    
+    return [float(q[0]), float(q[1]), float(q[2])]

@@ -14,15 +14,20 @@ import numpy as np
 # ROS Imports
 import rclpy
 import cv_bridge
+from sensor_msgs.msg import CameraInfo
+from std_msgs.msg import Float64MultiArray
 
 from rclpy.node         import Node
 from sensor_msgs.msg    import Image
 
 
+POINTS = np.array([(1, 1), (0, 0), (0, 1), (1, 0)]).reshape(4, 1, 2).astype(np.float32)
+PUBLISH_RATE = .01
+
 #
 #  Detector Node Class
 #
-class DetectorNode(Node):
+class ArucoNode(Node):
     # Pick some colors, assuming RGB8 encoding.
     red    = (255,   0,   0)
     green  = (  0, 255,   0)
@@ -49,28 +54,47 @@ class DetectorNode(Node):
         self.dict   = cv2.aruco.Dictionary_get(cv2.aruco.DICT_5X5_50)
         self.params = cv2.aruco.DetectorParameters_create()
 
-        # Finally, subscribe to the incoming image topic.  Using a
-        # queue size of one means only the most recent message is
-        # stored for the next subscriber callback.
-        self.sub = self.create_subscription(
-            Image, '/image_raw', self.process, 1)
-
         # Report.
         self.get_logger().info("ArUco detector running...")
+
+        # Get camera info
+        self.get_logger().info("Waiting for camera info...")
+        sub = self.create_subscription(CameraInfo, '/usb_cam/camera_info', self.cb_get_cam_info, 1)
+        self.caminfoready = False
+        while not self.caminfoready:
+            rclpy.spin_once(self)
+        self.destroy_subscription(sub)
+
+        # Localize aruco markers
+        self.pub = self.create_publisher(Image, name+'/image_raw', 3)
+        self.get_logger().info("Trying to detect all markers...")
+        sub = self.create_subscription(
+            Image, '/image_raw', self.cb_localize, 1)
+        self.localized = False
+        while not self.localized:
+            rclpy.spin_once(self)
+        self.destroy_subscription(sub)
+
+        self.get_logger().info("Publishing image transform data...")
+        self.pub_camera_transform = self.create_publisher(Float64MultiArray, '/cam_transform', 10)
+
+        self.timer = self.create_timer(PUBLISH_RATE, self.cb_publish_cam_transform)
+
 
     # Shutdown
     def shutdown(self):
         # No particular cleanup, just shut down the node.
         self.destroy_node()
 
+    def cb_get_cam_info(self, msg):
+        self.camD = np.array(msg.d).reshape(5)
+        self.camK = np.array(msg.k).reshape((3,3))
+        self.caminfoready = True
 
     # Process the image (detect the aruco).
-    def process(self, msg):
+    def cb_localize(self, msg):
         # Confirm the encoding and report.
         assert(msg.encoding == "rgb8")
-        # self.get_logger().info(
-        #     "Image %dx%d, bytes/pixel %d, encoding %s" %
-        #     (msg.width, msg.height, msg.step/msg.width, msg.encoding))
 
         # Convert into OpenCV image, using RGB 8-bit (pass-through).
         frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
@@ -79,7 +103,7 @@ class DetectorNode(Node):
         (boxes, ids, rejected) = cv2.aruco.detectMarkers(
             frame, self.dict, parameters=self.params)
 
-        # Loop over each marker: the list of corners and ID for this marker.
+                # Loop over each marker: the list of corners and ID for this marker.
         if len(boxes) > 0:
             for (box, id) in zip(boxes, ids.flatten()):
 
@@ -104,6 +128,19 @@ class DetectorNode(Node):
         # Convert the frame back into a ROS image and republish.
         self.pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 
+        if len(boxes) == 4 and self.caminfoready:
+            self.get_logger().info("Markers detected.")
+
+            bottom_lefts = np.array([box[0][3] for box in boxes]).reshape(4, 1, 2)
+            coords = cv2.undistortPoints(bottom_lefts, self.camK, self.camD)
+            self.M = cv2.getPerspectiveTransform(coords, POINTS)
+            self.M = self.M.flatten()
+            self.M = [float(v) for v in self.M]
+            self.localized = True
+                
+    def cb_publish_cam_transform(self):
+        msg = Float64MultiArray()
+        self.pub_camera_transform.publish(Float64MultiArray(data=self.M))
 
 #
 #   Main Code
@@ -113,7 +150,7 @@ def main(args=None):
     rclpy.init(args=args)
 
     # Instantiate the detector node.
-    node = DetectorNode('detectaruco')
+    node = ArucoNode('localizearuco')
 
     # Spin the node until interrupted.
     rclpy.spin(node)

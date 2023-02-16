@@ -144,10 +144,10 @@ class GotoNode(Node):
         z = float(xcurr[2, 0])
         self.get_logger().info("Flipping...")
         if self.mode == 'pan_forward':
-            jt_f = get_sol(x, y, z, 'pan_backward')
+            jt_f = get_sol(x, y, z, self.chain, 'pan_backward')
             self.mode = 'pan_backward'
         elif self.mode == 'pan_backward':
-            jt_f = get_sol(x, y, z, 'pan_forward')
+            jt_f = get_sol(x, y, z, self.chain, 'pan_forward')
             self.mode = 'pan_forward'
         jt_f = np.array(jt_f).reshape([3,1])
         self.cursplines.insert(0, Goto5(self.q, jt_f, MOVE_TIME, space='joint'))

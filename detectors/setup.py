@@ -26,8 +26,10 @@ setup(
             'balldetector  = detectors.balldetector:main',
             'facedetector  = detectors.facedetector:main',
             'detectaruco   = detectors.detectaruco:main',
+            'localizearuco = detectors.localizearuco:main',
             'writearuco    = detectors.writearuco:main',
             'depthincenter = detectors.depthincenter:main',
+            'keyboarddetector  = detectors.keyboarddetector:main',
         ],
     },
 )
