@@ -38,15 +38,27 @@ noteDistance = [0.0, # C
 
 octaveDist = (keyWidth + btwnSpacing)*7
 
+def _note_to_midi_value(note: str) -> int:
+    octave = int(note[-1])
+    if "#" in note:
+       letter = note[:2]
+    else:
+       letter = note[0]
+ 
+    midi_value = NOTES.index(letter)
+    midi_value += len(NOTES) * (octave + 1)
+
+    return midi_value
 
 
-def note_to_position(note: int) -> NotePosition:
+def note_to_position(note: str) -> NotePosition:
    """
       Maps between notes and keyboard positions.
       Given a message.note as specified in the Mido library, returns the x and y position of the note relative to a fixed position on the keyboard: 
    """
    #we define (0,0) as the lower left hand corner of the keyboard
    #we will also assume that the lowest ley is C2 and the highest key is C6
+   note = _note_to_midi_value(note)
 
    if note >= 36 and note <= 84: #determines if this is a valid note
       octave = (note-36)//12 #determines which local octave we're working in
@@ -69,11 +81,9 @@ def note_to_position(note: int) -> NotePosition:
       
 
    #convert to metric (in m)
-   x = x*0.0254*100
-   y = y*0.0254*100
-   z = z*0.0254*100
-
-   
+   x = x*0.0254
+   y = y*0.0254
+   z = z*0.0254
 
    return (x, y, z) #in m
 
@@ -137,4 +147,4 @@ def _get_trajectory(track: List[Message],
             start_time = end_time
    return trajectory
 
-print(note_to_position(63))
+print(note_to_position("C4"))

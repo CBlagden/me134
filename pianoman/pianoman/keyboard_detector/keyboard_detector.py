@@ -34,7 +34,7 @@ POINTS_3D = np.array([
     (0.566, 1.353, 0),
     (0.571, 0, 0),
     (0, 0, 0)
-]).reshape(4, 1, 2).astype(np.float32)
+]).reshape(4, 1, 3).astype(np.float32)
 
 # POINTS = np.array([(0, 1), (1, 1), (1, 0), (0, 0)]).reshape(4, 1, 2).astype(np.float32)
 PUBLISH_RATE = .01
@@ -107,16 +107,12 @@ class KeyboardNode(Node):
         # Confirm the encoding and report.
         assert(msg.encoding == "rgb8")
 
-        self.get_logger().info("Running node...")
-
         # Convert into OpenCV image, using RGB 8-bit (pass-through).
         frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
 
         # Detect.
         (boxes, ids, rejected) = cv2.aruco.detectMarkers(
             frame, self.dict, parameters=self.params)
-
-        self.get_logger().info(str(len(rejected)))
 
         if len(boxes) > 0:
             for (box, id) in zip(boxes, ids.flatten()):
@@ -159,21 +155,32 @@ class KeyboardNode(Node):
                 coords = cv2.undistortPoints(corner_markers_image_points, self.camK, self.camD)
                 self.M = cv2.getPerspectiveTransform(coords, corresponding_points)
 
-                rvec, tvec = cv2.solvePnP(POINTS_3D, corner_markers_image_points, self.camK, self.camD)
+                _, self.rvec, self.tvec = cv2.solvePnP(POINTS_3D, corner_markers_image_points, self.camK, self.camD)
 
             if self.M is not None:
                 bottom_lefts = np.array([box[0][3] for box in boxes]).reshape(len(boxes), 1, 2)
-                coords = cv2.undistortPoints(bottom_lefts, self.camK, self.camD)
-                self.get_logger().info(str(coords.shape))
+                coords_undistorted = cv2.undistortPoints(bottom_lefts, self.camK, self.camD)
 
-                coords = np.concatenate([coords, np.ones((len(bottom_lefts), 1, 1))], axis=-1)
+                coords = np.concatenate([coords_undistorted, np.ones((len(bottom_lefts), 1, 1))], axis=-1)
                 coords = coords @ self.M.T
-
-                
 
                 idx = -1
                 for i, id in enumerate(ids):
                     if id == KEYBOARD_ID:
+                        # point = list(coords_undistorted[idx].flatten())
+
+                        # self.get_logger().info(str(point))
+                        # point = np.array([*point, 1.0]).T
+
+                        # Rot, _ = cv2.Rodrigues(self.rvec)
+
+                        # point_w = Rot.T @ point.reshape((3, 1)) - self.tvec.reshape((3, 1))
+
+                        # point_w = list(point_w.flatten())
+                        # x_c = point_w[0]
+                        # y_c = point_w[1]
+                        # z_c = point_w[2]
+
                         idx = i
                         point = coords[idx].flatten()
                         x_c = point[0] / point[2]

@@ -15,6 +15,7 @@ find_package(geometry_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/StateStamped.msg"
   "msg/PosCmdStamped.msg"
+  "srv/NoteCmdStamped.srv"
   DEPENDENCIES std_msgs builtin_interfaces geometry_msgs
  )
 

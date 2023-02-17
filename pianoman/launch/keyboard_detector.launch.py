@@ -45,8 +45,8 @@ def generate_launch_description():
         package    = 'pianoman',
         executable = 'keyboard_detector',
         output     = 'screen',
-        remappings = [('/image_raw', '/camera/color/image_raw'),
-                      ('/camera_info', '/camera/color/camera_info')])
+        remappings = [('/image_raw', '/usb_cam/image_raw'),
+                      ('/camera_info', '/usb_cam/camera_info')])
 
 
     # Use the standard realsense launch description.  But override
@@ -76,7 +76,7 @@ def generate_launch_description():
     return LaunchDescription([
 
         # Start the nodes.
-        # node_usbcam,
-        incl_realsense,
+        node_usbcam,
+        # incl_realsense,
         node_keyboard,
     ])

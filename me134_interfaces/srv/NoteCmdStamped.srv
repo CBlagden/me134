@@ -1,0 +1,10 @@
+std_msgs/Header header
+# the actual note (defaults to C4)
+string note "C4"
+
+# other playing characteristics
+float64 hold_time 0.5 # s
+uint8 force 100 # relative to MIDI
+
+---
+bool success false
