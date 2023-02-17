@@ -25,6 +25,7 @@ setup(
             "state_machine = pianoman.state_machine.state_machine:main",
             "local_planner = pianoman.local_planner.local_planner:main",
             "goto_point = pianoman.local_planner.goto_point:main",
+            "keyboard_detector = pianoman.keyboard_detector.keyboard_detector:main",
         ],
     },
 )

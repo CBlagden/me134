@@ -21,14 +21,17 @@ from pianoman.utils.rviz_helper import create_pt_marker
 from pianoman.utils.KinematicChain import KinematicChain
 from pianoman.utils.Segments import Goto5, Hold, Stay
 import pianoman.utils.midi_helper as midi_helper
+from pianoman.utils.TransformHelpers import Rotz, T_from_Rp
 
 from sensor_msgs.msg    import JointState
+from geometry_msgs.msg  import Point
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Empty, String
 from me134_interfaces.msg import StateStamped, PosCmdStamped
 
 RATE = 100.0 # Hz
 LAM = 10
+P_BASE_WORLD = np.array([0.043, 0.593, 0.0]) # m
 
 class LocalPlanner(Node):
     def __init__(self):
@@ -119,7 +122,7 @@ class LocalPlanner(Node):
 
                         # Add a secondary task to prevent the robot from running through the table
                         # Quadratic cost C(q1) = k q1^2 -> dC = 2k q1 = LAM_UP * q1
-                        LAM_UP = 10
+                        LAM_UP = 100
                         qdot_up = np.array([0.0, -LAM_UP * self.q[1,0], 0.0]).reshape([3,1])
                         qd_dot = qd_dot + (np.eye(3) - Jw_pinv @ np.linalg.pinv(Jw_pinv)) @ qdot_up
                         # qd_dot = qd_dot + (np.eye(3) - np.linalg.pinv(Jv) @ Jv) @ qdot_up   # No anti-singularity weighting
@@ -154,7 +157,7 @@ class LocalPlanner(Node):
     # callback for /point_cmd
     def cb_pointcmd(self, msg):
         #
-        self.get_logger().info("Got point command.")
+        self.get_logger().info(f"Got point command: [{msg.goal.x}, {msg.goal.y}, {msg.goal.z}]")
 
         # reset spline list
         self.cursplines = []
@@ -177,34 +180,49 @@ class LocalPlanner(Node):
 
     def cb_update_kb_pos(self, msg: Point):
         # technically z never changes but we save it just in case
-        self.kb_pos = [msg.x, msg.y, msg.z]
+        self.kb_pos = np.array([msg.x, msg.y, msg.z])
 
     def cb_notecmd(self, msg: String):
         """
            Given a integer message with a MIDI note value, adds a spline that moves the tip from the current position to the position of the note on the keyboard
         """
         note = int(msg.data)
-        kb_goal_x, kb_goal_y = midi_helper.note_to_position(note)
-        kb_pos_x, kb_pos_y, _ = self.kb_pos
-        goal_x = kb_goal_x + kb_pos_x
-        goal_y = kb_goal_y + kb_pos_y
-        pd_final = [goal_x, goal_y, 30] # idk what the units are
+        # extract the location of the note in the keyboard frame
+        goal_x_kbframe, goal_y_kbframe = midi_helper.note_to_position(note)
+        goal_pos_kbframe = np.array([goal_x_kbframe, goal_y_kbframe, 0.0])
+        print(goal_pos_kbframe)
+        # convert to world frame
+        R_kb_to_world = Rotz(-np.pi/2)
+        key_pos_worldframe = R_kb_to_world @ goal_pos_kbframe + self.kb_pos
+        print(R_kb_to_world @ goal_pos_kbframe)
+        print(key_pos_worldframe)
 
-        # the rest of this is identical to self.cb_pointcmd
+        pd_final = np.array([key_pos_worldframe[0] + 0.04, key_pos_worldframe[1] - 0.07, 0.043]) - P_BASE_WORLD # m
+        pd_final = Rotz(np.pi) @ (pd_final)
+        print(pd_final)
+
+
+        # (MOSTLY) copied from cb_pointcmd
+        # self.get_logger().info(f"Got point command: [{msg.x}, {msg.y}, {msg.z}]")
+
+        # reset spline list
+        self.cursplines = []
+        # Use this to initiate/reset splines between cartesian positions
         [pcur, _, _, _] = self.chain.fkin(self.q)
         # spline to pd_final
         pcur = np.array(pcur).reshape([3,1])
-        pd_final = np.array(pd_final).reshape([3,1])
+        pd_final = pd_final.reshape([3,1])
 
-        move_time = msg.move_time.sec + msg.move_time.nanosec * 1e-9
-        self.cursplines.append(Goto5(pcur, pd_final, move_time, space='task'))
+        move_time = 2
+        self.cursplines.append(Goto5(pcur, pd_final + np.array([0.0, 0.0, 0.15]).reshape([3,1]), move_time, space='task'))
+        self.cursplines.append(Goto5(pd_final + np.array([0.0, 0.0, 0.15]).reshape([3,1]), pd_final, 0.7, space='task'))
         # self.cursplines.append(Hold(pd_final, move_time, space='task'))
         self.cursplines.append(Stay(pd_final, space='task'))
         self.tstart = self.get_clock().now()
 
         # publish the goal point
-        markermsg = create_pt_marker(msg.goal.x, msg.goal.y, msg.goal.z, self.get_clock().now().to_msg())
-        self.pub_goalmarker.publish(markermsg)
+        # markermsg = create_pt_marker(pd_final[0], pd_final[1], pd_final[2], self.get_clock().now().to_msg())
+        # self.pub_goalmarker.publish(markermsg)
 
 
     ## Helper functions

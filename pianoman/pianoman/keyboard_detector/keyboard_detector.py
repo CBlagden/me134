@@ -28,6 +28,14 @@ POINTS = np.array([
     (0, 0)
 ]).reshape(4, 1, 2).astype(np.float32)
 
+
+POINTS_3D = np.array([
+    (0.001, 1.227, 0),
+    (0.566, 1.353, 0),
+    (0.571, 0, 0),
+    (0, 0, 0)
+]).reshape(4, 1, 2).astype(np.float32)
+
 # POINTS = np.array([(0, 1), (1, 1), (1, 0), (0, 0)]).reshape(4, 1, 2).astype(np.float32)
 PUBLISH_RATE = .01
 KEYBOARD_ID = 4 # TODO: define actual keyboard id - and this should support multiple tags to account for accidental occlusions
@@ -151,6 +159,8 @@ class KeyboardNode(Node):
                 coords = cv2.undistortPoints(corner_markers_image_points, self.camK, self.camD)
                 self.M = cv2.getPerspectiveTransform(coords, corresponding_points)
 
+                rvec, tvec = cv2.solvePnP(POINTS_3D, corner_markers_image_points, self.camK, self.camD)
+
             if self.M is not None:
                 bottom_lefts = np.array([box[0][3] for box in boxes]).reshape(len(boxes), 1, 2)
                 coords = cv2.undistortPoints(bottom_lefts, self.camK, self.camD)
@@ -159,7 +169,7 @@ class KeyboardNode(Node):
                 coords = np.concatenate([coords, np.ones((len(bottom_lefts), 1, 1))], axis=-1)
                 coords = coords @ self.M.T
 
-                # coords = cv2.perspectiveTransform()
+                
 
                 idx = -1
                 for i, id in enumerate(ids):

@@ -42,8 +42,8 @@ def generate_launch_description():
     # Configure the keyboard detector node
     node_keyboard = Node(
         name       = 'keyboard',
-        package    = 'detectors',
-        executable = 'keyboarddetector',
+        package    = 'pianoman',
+        executable = 'keyboard_detector',
         output     = 'screen',
         remappings = [('/image_raw', '/camera/color/image_raw'),
                       ('/camera_info', '/camera/color/camera_info')])

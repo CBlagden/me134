@@ -31,9 +31,9 @@ def main(args=None):
     msg.header.stamp = node.get_clock().now().to_msg()
     msg.header.frame_id = "base_link"
 
-    msg.goal.x = 0.3
-    msg.goal.y = 0.0
-    msg.goal.z = 0.2
+    msg.goal.x = -0.0
+    msg.goal.y = -0.0
+    msg.goal.z = 0.8
 
     move_time = 10.0
 
