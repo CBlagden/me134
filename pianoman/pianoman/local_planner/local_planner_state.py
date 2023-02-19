@@ -24,6 +24,7 @@ from pianoman.utils.KinematicChain import KinematicChain
 from pianoman.utils.Segments import Goto5, Hold, Stay
 import pianoman.utils.midi_helper as midi_helper
 from pianoman.utils.TransformHelpers import Rotz
+from pianoman.utils.StateClock import StateClock
 
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg  import Point
@@ -51,11 +52,13 @@ class LocalPlanner(Node):
 
         # forward kinematics
         self.chain = KinematicChain("base_link", "tip_link")
-        # time variables
-        self.tstart = None
         # general
         self.cursplines = []
         self.jointnames = ["pan_joint", "middle_joint", "penguin_joint"]
+
+        # state clocks
+        self.clocks = []
+        self.play_clock = None
 
 
         ## Publishers
@@ -98,9 +101,10 @@ class LocalPlanner(Node):
             if (self.cursplines):
                 # check if completed
                 curspline = self.cursplines[0]
-                deltat = (t - self.tstart).nanoseconds / 1000000000.
+                deltat = self.play_clock.t_since_start(t, rostime=True)
+
                 if (curspline.completed(deltat)):
-                    self.tstart = t
+                    self.play_clock.restart(t, rostime=True)
                     self.cursplines.pop(0)
                 else:
                     # joint space move
@@ -182,7 +186,9 @@ class LocalPlanner(Node):
         self.cursplines.append(Goto5(pcur, pd_final, move_time, space='task'))
         # self.cursplines.append(Hold(pd_final, move_time, space='task'))
         self.cursplines.append(Stay(pd_final, space='task'))
-        self.tstart = self.get_clock().now()
+
+        # initialize the clock
+        self.play_clock = StateClock(self.get_clock().now(), rostime=True)
 
         # publish the goal point
         markermsg = create_pt_marker(msg.goal.x, msg.goal.y, msg.goal.z, self.get_clock().now().to_msg())
@@ -222,11 +228,9 @@ class LocalPlanner(Node):
             p_start, _ = self.cursplines[-1].evaluate(tend)
         else:
             [p_start, _, _, _] = self.chain.fkin(self.q)
-            self.tstart = self.get_clock().now()
+            # initialize the clock
+            self.play_clock = StateClock(self.get_clock().now(), rostime=True)
 
-        print(p_start)
-        print(pd_abovenote)
-        print(play_pd)
         move_time = 0.6 # TODO: compute time based on distance
         self.cursplines.append(Goto5(p_start, pd_abovenote, move_time, space='task'))
 

@@ -36,7 +36,7 @@ POINTS_3D = np.array([
     (0, 0, 0)
 ]).reshape(4, 1, 3).astype(np.float32)
 
-# POINTS = np.array([(0, 1), (1, 1), (1, 0), (0, 0)]).reshape(4, 1, 2).astype(np.float32)
+Z_OFFSET = 0.06 # cm
 PUBLISH_RATE = .01
 KEYBOARD_ID = 4 # TODO: define actual keyboard id - and this should support multiple tags to account for accidental occlusions
 
@@ -61,12 +61,12 @@ class KeyboardNode(Node):
 
         # Set up the ArUco detector.  Use a dictionary with the
         # appropriate tags.  DICT_6x6_1000 has 1000 options (way too
-        # many).  DICT_6x6_250 has 250 options.  DICT_6x6_50 is
+        # many).  DICT_6x w/6_250 has 250 options.  DICT_6x6_50 is
         # probably enough for our projects...
         self.dict   = cv2.aruco.Dictionary_get(cv2.aruco.DICT_5X5_50)
         self.params = cv2.aruco.DetectorParameters_create()
 
-        # Report.
+        # Report. 
         self.get_logger().info("Keyboard detector running...")
 
         # Get camera info
@@ -151,45 +151,60 @@ class KeyboardNode(Node):
                 self.get_logger().info("Four corners detected... recomputing perspective transform")
                 corner_markers_image_points = np.array(list(corner_markers.values())).reshape(4, 1, 2)
                 corresponding_points = POINTS[list(corner_markers.keys())]
+                corresponding_points_3D = POINTS_3D[list(corner_markers.keys())]
 
                 coords = cv2.undistortPoints(corner_markers_image_points, self.camK, self.camD)
                 self.M = cv2.getPerspectiveTransform(coords, corresponding_points)
 
-                _, self.rvec, self.tvec = cv2.solvePnP(POINTS_3D, corner_markers_image_points, self.camK, self.camD)
+                _, self.rvec, self.tvec = cv2.solvePnP(corresponding_points_3D, corner_markers_image_points, self.camK, self.camD)
+
 
             if self.M is not None:
                 bottom_lefts = np.array([box[0][3] for box in boxes]).reshape(len(boxes), 1, 2)
+
+                # we get the normalized image coordinates
                 coords_undistorted = cv2.undistortPoints(bottom_lefts, self.camK, self.camD)
 
+                # we make the normalized image coordinates homogeneous
                 coords = np.concatenate([coords_undistorted, np.ones((len(bottom_lefts), 1, 1))], axis=-1)
+
+                # we multiple by the perspective transform to obtain the world coordinates
                 coords = coords @ self.M.T
 
-                idx = -1
                 for i, id in enumerate(ids):
                     if id == KEYBOARD_ID:
-                        # point = list(coords_undistorted[idx].flatten())
+                        # we get the normalized image coordinate from undistortPoints
+                        normalized_point = list(coords_undistorted[i].flatten())
 
-                        # self.get_logger().info(str(point))
-                        # point = np.array([*point, 1.0]).T
+                        # we make the point homogeneous
+                        normalized_point = np.array([*normalized_point, 1.0]).reshape((3, 1))
 
-                        # Rot, _ = cv2.Rodrigues(self.rvec)
+                        Rot, _ = cv2.Rodrigues(self.rvec)
+                        R_inv = np.linalg.inv(Rot)
 
-                        # point_w = Rot.T @ point.reshape((3, 1)) - self.tvec.reshape((3, 1))
+                        # we solve the left and right hand sides of the equation for lambda
+                        left_side = R_inv @ normalized_point
+                        right_side = R_inv @ self.tvec
+                        lambda_ = (Z_OFFSET + right_side[2][0]) / left_side[2][0]
 
-                        # point_w = list(point_w.flatten())
-                        # x_c = point_w[0]
-                        # y_c = point_w[1]
-                        # z_c = point_w[2]
+                        # once we have lambda_ we can project from normalized image coordinates to
+                        # world coordinates
+                        point_w = R_inv @ (lambda_ * normalized_point - self.tvec)
 
-                        idx = i
-                        point = coords[idx].flatten()
+                        point_w = list(point_w.flatten())
+                        p = Point()
+                        p.x = point_w[0]
+                        p.y = point_w[1]
+                        p.z = point_w[2]
+
+                        # # using perspective transform to get point
+                        point = coords[i].flatten()
                         x_c = point[0] / point[2]
                         y_c = point[1] / point[2]
 
-                        p = Point()
-                        p.x = x_c
-                        p.y = y_c
-                        p.z = 0.0
+                        self.get_logger().info("solvePnP point " + str(point_w))
+                        self.get_logger().info("perspective point " + str(point))
+
                         self.pub_kb_pos.publish(p)
                         break
 
