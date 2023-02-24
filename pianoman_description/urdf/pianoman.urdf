@@ -1,0 +1,424 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-1-g15f4949  Build Version: 1.6.7594.29634
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="pianoman">
+  <!-- Create a dummy link -->
+  <link name="dummy_link"/>
+  <joint name="dummy_joint" type="fixed">
+    <parent link="dummy_link"/>
+    <child link="base_link"/>
+  </joint>
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.0300061235118624 0.0359903663648887 0.0175486455313757"
+        rpy="0 0 0" />
+      <mass
+        value="0.304239093789025" />
+      <inertia
+        ixx="0.000516350291713157"
+        ixy="-1.70846675565787E-05"
+        ixz="5.14044040712592E-08"
+        iyy="0.000205370464784606"
+        iyz="7.37057571153816E-08"
+        izz="0.000710548710791563" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.698039215686274 0.698039215686274 0.698039215686274 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="palm_link">
+    <inertial>
+      <origin
+        xyz="-5.72137985251179E-05 -1.24111370523003E-12 0.0444728662974232"
+        rpy="0 0 0" />
+      <mass
+        value="0.971138103562556" />
+      <inertia
+        ixx="0.00387122030448526"
+        ixy="1.83000716643826E-05"
+        ixz="1.22481858075798E-15"
+        iyy="0.000445673118784228"
+        iyz="-7.99810781386117E-16"
+        izz="0.00423305624403146" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/palm_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.698039215686274 0.698039215686274 0.698039215686274 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/palm_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="global_pan_joint"
+    type="continuous">
+    <origin
+      xyz="0.04 0.038 0.04375"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="palm_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="R_pan_link">
+    <inertial>
+      <origin
+        xyz="0.0142755458704184 -0.000915820753126177 0.0741330552426406"
+        rpy="0 0 0" />
+      <mass
+        value="0.411841014619115" />
+      <inertia
+        ixx="0.000650297037313643"
+        ixy="-8.01776717080046E-08"
+        ixz="-8.99147209831474E-05"
+        iyy="0.000555448644534389"
+        iyz="-6.68647343982056E-06"
+        izz="0.000271554876260846" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/R_pan_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/R_pan_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="R_pan_joint"
+    type="continuous">
+    <origin
+      xyz="0 0.155 0.09375"
+      rpy="0 0 1.5708" />
+    <parent
+      link="palm_link" />
+    <child
+      link="R_pan_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="R_lower_link">
+    <inertial>
+      <origin
+        xyz="0.184383798824422 0.000878100656252749 -0.00632078776204578"
+        rpy="0 0 0" />
+      <mass
+        value="0.289456956408964" />
+      <inertia
+        ixx="0.000116039318017133"
+        ixy="4.58303088457045E-06"
+        ixz="-5.14044060530752E-08"
+        iyy="0.00122823071669264"
+        iyz="7.37057426641069E-08"
+        izz="0.00133536408539488" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/R_lower_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.698039215686274 0.698039215686274 0.698039215686274 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/R_lower_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="R_lower_joint"
+    type="continuous">
+    <origin
+      xyz="-0.01505 0 0.11"
+      rpy="3.1416 -1.5708 0" />
+    <parent
+      link="R_pan_link" />
+    <child
+      link="R_lower_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="R_upper_link">
+    <inertial>
+      <origin
+        xyz="0.232720336790854 -0.00655827605655907 0.00277558152349347"
+        rpy="0 0 0" />
+      <mass
+        value="0.361549054701378" />
+      <inertia
+        ixx="0.000183935481993837"
+        ixy="4.93986523316313E-08"
+        ixz="-6.29732100236879E-07"
+        iyy="0.000591365455989536"
+        iyz="-4.5539527396278E-06"
+        izz="0.000647825294418246" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/R_upper_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/R_upper_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="R_upper_joint"
+    type="continuous">
+    <origin
+      xyz="0.25 0 -0.03105"
+      rpy="-3.1416 4.1111E-05 0" />
+    <parent
+      link="R_lower_link" />
+    <child
+      link="R_upper_link" />
+    <axis
+      xyz="-4.1111E-05 0 -1" />
+  </joint>
+  <link
+    name="L_pan_link">
+    <inertial>
+      <origin
+        xyz="0.0142755458704183 -0.000915820753125454 0.07413305524264"
+        rpy="0 0 0" />
+      <mass
+        value="0.411841014619115" />
+      <inertia
+        ixx="0.000650297037313641"
+        ixy="-8.01776717080075E-08"
+        ixz="-8.99147209831474E-05"
+        iyy="0.000555448644534387"
+        iyz="-6.68647343981909E-06"
+        izz="0.000271554876260845" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/L_pan_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/L_pan_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="L_pan_joint"
+    type="continuous">
+    <origin
+      xyz="0 -0.155 0.09375"
+      rpy="0 0 -1.5708" />
+    <parent
+      link="palm_link" />
+    <child
+      link="L_pan_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="L_lower_link">
+    <inertial>
+      <origin
+        xyz="0.184383798819117 0.00107792483506533 -0.00632078776238132"
+        rpy="0 0 0" />
+      <mass
+        value="0.289456956413614" />
+      <inertia
+        ixx="0.000116039318155093"
+        ixy="4.56700415656016E-06"
+        ixz="-5.14044040707716E-08"
+        iyy="0.00122823071657011"
+        iyz="7.37057571153318E-08"
+        izz="0.00133536408541021" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/L_lower_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.698039215686274 0.698039215686274 0.698039215686274 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/L_lower_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="L_lower_joint"
+    type="continuous">
+    <origin
+      xyz="-0.01505 0 0.11"
+      rpy="3.1416 -1.5708 0" />
+    <parent
+      link="L_pan_link" />
+    <child
+      link="L_lower_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="L_upper_link">
+    <inertial>
+      <origin
+        xyz="0.232720223384442 -0.00668137185927126 0.00278514918198189"
+        rpy="0 0 0" />
+      <mass
+        value="0.361549065607165" />
+      <inertia
+        ixx="0.000183935551655801"
+        ixy="5.32145615380455E-08"
+        ixz="-6.48802911842293E-07"
+        iyy="0.000591365456371859"
+        iyz="-4.55395565704938E-06"
+        izz="0.000647825258809842" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/L_upper_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.698039215686274 0.698039215686274 0.698039215686274 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://pianoman_description/meshes/L_upper_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="L_upper_joint"
+    type="continuous">
+    <origin
+      xyz="0.25 0 -0.03105"
+      rpy="-3.1416 0 0" />
+    <parent
+      link="L_lower_link" />
+    <child
+      link="L_upper_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+</robot>

@@ -210,7 +210,8 @@ class LocalPlanner(Node):
         self.get_logger().info(f"Added {note} at [{note_world[0]}, {note_world[1]}, {note_world[2]}]")
 
         # Create the trajectory to move to the note
-        pd_offsets = np.array([0.04, -0.07, -0.02]).reshape([3,1]) # m
+        pd_offsets = np.array([0.04, -0.07, -0.04]).reshape([3,1]) # m
+        # pd_offsets = np.zeros((3, 1))
         # convert to robot base frame coordinates  and add offsets
         play_pd = Rotz(np.pi) @ ((note_world + pd_offsets) - P_BASE_WORLD)
 
