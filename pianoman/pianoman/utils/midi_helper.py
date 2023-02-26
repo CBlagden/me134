@@ -71,7 +71,6 @@ def note_to_position(note: str) -> NotePosition:
       else: #note is a white key
          y = 1.25 #(ALSO IN INCHES I'M SORRY)
          z = 1.15 + 0.9605
-      print(NOTES[localNote], octave+2)
    else:
       print("not a valid note, double check octave settings")
       #play C instead
@@ -146,5 +145,3 @@ def _get_trajectory(track: List[Message],
 
             start_time = end_time
    return trajectory
-
-print(note_to_position("C4"))

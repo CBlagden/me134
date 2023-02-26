@@ -1,0 +1,3 @@
+std_msgs/Header header
+builtin_interfaces/Duration move_time
+std_msgs/Float64MultiArray goal

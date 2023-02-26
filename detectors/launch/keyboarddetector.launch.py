@@ -76,7 +76,7 @@ def generate_launch_description():
     return LaunchDescription([
 
         # Start the nodes.
-        # node_usbcam,
-        incl_realsense,
+        node_usbcam,
+        # incl_realsense,
         node_keyboard,
     ])

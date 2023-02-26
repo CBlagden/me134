@@ -22,10 +22,10 @@ def generate_launch_description():
     # LOCATE FILES
 
     # Locate the RVIZ configuration file.
-    rvizcfg = os.path.join(pkgdir("threedof_description"), "rviz/viewurdf.rviz")
+    rvizcfg = os.path.join(pkgdir("pianoman_description"), "rviz/viewurdf.rviz")
 
     # Locate/load the robot's URDF file (XML).
-    urdf = os.path.join(pkgdir("threedof_description"), "urdf/threedof.urdf")
+    urdf = os.path.join(pkgdir("pianoman_description"), "urdf/pianoman.urdf")
     with open(urdf, "r") as file:
         robot_description = file.read()
 
@@ -70,8 +70,8 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"family": "robotlab"},
-            {"motors": ["7.3", "7.5", "7.2"]},
-            {"joints": ["pan_joint", "middle_joint", "penguin_joint"]},
+            {"motors": ["7.7", "8.3", "7.5", "7.4", "7.3", "7.1", "7.6", "8.4", "7.2"]},
+            {"joints": ["base_joint", "R_gripper_joint", "R_pan_joint", "R_lower_joint", "R_upper_joint", "L_gripper_joint", "L_pan_joint", "L_lower_joint", "L_upper_joint"]},
         ],
     )
 
@@ -88,6 +88,12 @@ def generate_launch_description():
         executable="local_planner",
         output="screen",
     )
+    # node_localplanner = Node(
+    #     name="local_planner_3dof",
+    #     package="pianoman",
+    #     executable="local_planner_3dof",
+    #     output="screen",
+    # )
 
     ######################################################################
     # COMBINE THE ELEMENTS INTO ONE LIST
@@ -102,8 +108,8 @@ def generate_launch_description():
             # Start the hebi.
             node_hebi,
             # Start the state machine publisher
-            node_statemachine,
-            # Start up the local planner
+            # node_statemachine,
+            # # Start up the local planner
             node_localplanner,
         ]
     )

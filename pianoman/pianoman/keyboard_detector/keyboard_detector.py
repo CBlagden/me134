@@ -18,7 +18,9 @@ from sensor_msgs.msg import CameraInfo
 
 from rclpy.node         import Node
 from sensor_msgs.msg    import Image
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Pose, Point, Quaternion
+
+import pianoman.utils.TransformHelpers as TransformHelpers
 
 
 POINTS = np.array([
@@ -30,13 +32,13 @@ POINTS = np.array([
 
 
 POINTS_3D = np.array([
-    (0.001, 1.227, 0),
-    (0.566, 1.353, 0),
-    (0.571, 0, 0),
-    (0, 0, 0)
+    (0.0, 1.4, 0.0),
+    (0.6, 1.4, 0.0),
+    (0.6, 0.0, 0.0),
+    (0.0, 0.0, 0.0)
 ]).reshape(4, 1, 3).astype(np.float32)
 
-Z_OFFSET = 0.06 # cm
+Z_OFFSET = 0.065 # cm
 PUBLISH_RATE = .01
 KEYBOARD_ID = 4 # TODO: define actual keyboard id - and this should support multiple tags to account for accidental occlusions
 
@@ -77,7 +79,7 @@ class KeyboardNode(Node):
             rclpy.spin_once(self)
         self.destroy_subscription(sub)
 
-        self.pub_kb_pos = self.create_publisher(Point, name+"/keyboard_point", 3)
+        self.pub_kb_pos = self.create_publisher(Pose, name+"/keyboard_point", 3)
         self.M = None
 
         # Localize aruco markers
@@ -125,6 +127,16 @@ class KeyboardNode(Node):
                 (topLeft, topRight, bottomRight, bottomLeft) = box[0]
                 center = (topLeft + bottomRight)/2
 
+                if id == KEYBOARD_ID:
+                    if topLeft[1] != topRight[1] or topLeft[0] != bottomLeft[0]:
+                        delta_y = topLeft[0] - bottomLeft[0]
+                        delta_x = bottomLeft[1] - topLeft[1]
+                        rot = np.arctan2(delta_y, delta_x)
+                    else:
+                        rot = 0
+
+                    self.get_logger().info(str("rotation: " + str(np.degrees(rot))))
+
                 # Draw the box around the marker.
                 pts = [box.reshape(-1,1,2).astype(int)]
                 cv2.polylines(frame, pts, True, self.green, 2)
@@ -132,20 +144,15 @@ class KeyboardNode(Node):
                 # Draw the center circle and write the ID there.
                 ctr = tuple(center.astype(int))
                 cv2.circle(frame, ctr, 4, self.red, -1)
+                cv2.circle(frame, tuple(bottomLeft.astype(int)), 3, self.blue, -1)
                 cv2.putText(frame, str(id), ctr,
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.green, 2)
 
-            self.pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 
             corner_markers = {}
             for (box, id) in zip(boxes, ids.flatten()):
                 if 0 <= id <= 3:
-                    if id == 0 or id == 1:
-                        # save the bottom left point from each detected table corner
-                        corner_markers[id] = box[0][3]
-                    else:
-                        # save the bottom right point for these tags
-                        corner_markers[id] = box[0][2]
+                    corner_markers[id] = box[0][3]
 
             if len(corner_markers) == 4:
                 self.get_logger().info("Four corners detected... recomputing perspective transform")
@@ -192,10 +199,19 @@ class KeyboardNode(Node):
                         point_w = R_inv @ (lambda_ * normalized_point - self.tvec)
 
                         point_w = list(point_w.flatten())
-                        p = Point()
-                        p.x = point_w[0]
-                        p.y = point_w[1]
-                        p.z = point_w[2]
+
+                        point = Point(x=point_w[0],
+                                      y=point_w[1],
+                                      z=point_w[2])
+                        pose = Pose()
+                        pose.position = point
+
+                        quat = list(TransformHelpers.quat_from_R(TransformHelpers.Rotz(rot)))
+                        q = Quaternion(x=quat[0],
+                                       y=quat[1],
+                                       z=quat[2],
+                                       w=quat[3])
+                        pose.orientation = q
 
                         # # using perspective transform to get point
                         point = coords[i].flatten()
@@ -205,9 +221,10 @@ class KeyboardNode(Node):
                         self.get_logger().info("solvePnP point " + str(point_w))
                         self.get_logger().info("perspective point " + str(point))
 
-                        self.pub_kb_pos.publish(p)
+                        self.pub_kb_pos.publish(pose)
                         break
 
+            self.pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 #
 #   Main Code
 #

@@ -91,7 +91,7 @@
     </collision>
   </link>
   <joint
-    name="global_pan_joint"
+    name="base_joint"
     type="continuous">
     <origin
       xyz="0.04 0.038 0.04375"
@@ -201,7 +201,7 @@
     type="continuous">
     <origin
       xyz="-0.01505 0 0.11"
-      rpy="3.1416 -1.5708 0" />
+      rpy="0 -1.5708 0" />
     <parent
       link="R_pan_link" />
     <child
@@ -228,7 +228,7 @@
     <visual>
       <origin
         xyz="0 0 0"
-        rpy="0 0 0" />
+        rpy="3.1416 0 0" />
       <geometry>
         <mesh
           filename="package://pianoman_description/meshes/R_upper_link.STL" />
@@ -254,7 +254,7 @@
     type="continuous">
     <origin
       xyz="0.25 0 -0.03105"
-      rpy="-3.1416 4.1111E-05 0" />
+      rpy="0 4.1111E-05 0" />
     <parent
       link="R_lower_link" />
     <child
@@ -334,7 +334,7 @@
     <visual>
       <origin
         xyz="0 0 0"
-        rpy="0 0 0" />
+        rpy="3.1416 0 0" />
       <geometry>
         <mesh
           filename="package://pianoman_description/meshes/L_lower_link.STL" />
@@ -412,12 +412,60 @@
     name="L_upper_joint"
     type="continuous">
     <origin
-      xyz="0.25 0 -0.03105"
-      rpy="-3.1416 0 0" />
+      xyz="0.25 0 0.03105"
+      rpy="0 0 0" />
     <parent
       link="L_lower_link" />
     <child
       link="L_upper_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+
+  <link
+    name="L_tip_link">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0" />
+    </inertial>
+  </link>
+  <joint
+    name="L_tip_joint"
+    type="fixed">
+    <origin
+      xyz="0.403 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="L_upper_link" />
+    <child
+      link="L_tip_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+
+  <link
+    name="R_tip_link">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0" />
+    </inertial>
+  </link>
+  <joint
+    name="R_tip_joint"
+    type="fixed">
+    <origin
+      xyz="0.403 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="R_upper_link" />
+    <child
+      link="R_tip_link" />
     <axis
       xyz="0 0 1" />
   </joint>

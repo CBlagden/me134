@@ -134,11 +134,16 @@ class KeyboardNode(Node):
             self.pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 
             corner_markers = {}
+            keyboard_markers = {}
             for (box, id) in zip(boxes, ids.flatten()):
                 if 0 <= id <= 3:
                     if id == 0 or id == 1:
                         # save the bottom left point from each detected table corner
                         corner_markers[id] = box[0][3]
+                    elif id == KEYBOARD_ID:
+                        # save the bottom right point for keyboard, along with all corners
+                        corner_markers[id] = box[0][2]
+                        keyboard_markers[id] = [box[0][i] for i in range(4)]
                     else:
                         # save the bottom right point for these tags
                         corner_markers[id] = box[0][2]
@@ -152,14 +157,15 @@ class KeyboardNode(Node):
                 self.M = cv2.getPerspectiveTransform(coords, corresponding_points)
 
             if self.M is not None:
-                bottom_lefts = np.array([box[0][3] for box in boxes]).reshape(len(boxes), 1, 2)
-                coords = cv2.undistortPoints(bottom_lefts, self.camK, self.camD)
-                self.get_logger().info(str(coords.shape))
+                # bottom_lefts = np.array([box[0][3] for box in boxes]).reshape(len(boxes), 1, 2)
+                keyboard_corners = keyboard_markers[KEYBOARD_ID]
+                coords = cv2.undistortPoints(keyboard_corners, self.camK, self.camD)
 
-                coords = np.concatenate([coords, np.ones((len(bottom_lefts), 1, 1))], axis=-1)
+                coords = np.concatenate([coords, np.ones((len(keyboard_corners), 1, 1))], axis=-1)
                 coords = coords @ self.M.T
-
-                # coords = cv2.perspectiveTransform()
+                
+                (topLeft, topRight, bottomRight, bottomLeft) = coords[0].flatten(), 
+                    coords[1].flatten(), coords[2].flatten(), coords[3].flatten()
 
                 idx = -1
                 for i, id in enumerate(ids):

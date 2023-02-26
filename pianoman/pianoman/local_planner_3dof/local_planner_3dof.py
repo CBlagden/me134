@@ -1,4 +1,4 @@
-# local_planner.py
+# local_planner_3dof.py
 # ME 134 Team Penguinos
 #
 # Node to direct the robot's arms to a target end effector position.
@@ -39,7 +39,7 @@ class LocalPlanner(Node):
     P_HOVER = np.array([-0.5, 0.0, 0.1]).reshape([3,1]) # TODO: make not fixed (moves based on piano)
 
     def __init__(self):
-        super().__init__('local_planner')
+        super().__init__('local_planner_3dof')
 
         ## Class variables
         # state variable
@@ -50,12 +50,13 @@ class LocalPlanner(Node):
         self.kb_pos = None
 
         # forward kinematics
-        self.chain = KinematicChain("base_link", "tip_link")
+        self.chain = KinematicChain("base_link", "L_tip_link")
         # time variables
         self.tstart = None
         # general
         self.cursplines = []
-        self.jointnames = ["pan_joint", "middle_joint", "penguin_joint"]
+        self.inactivejoints = ["base_joint", "R_gripper_joint", "R_hand_joint", "R_lower_joint", "R_upper_joint", "L_gripper_joint"]
+        self.jointnames = ["L_hand_joint", "L_lower_joint", "L_upper_joint"]
 
 
         ## Publishers
@@ -145,10 +146,10 @@ class LocalPlanner(Node):
             # Publish!
             cmdmsg = JointState()
             cmdmsg.header.stamp = t.to_msg()
-            cmdmsg.name = self.jointnames
-            cmdmsg.position = poscmd
-            cmdmsg.velocity = velcmd
-            cmdmsg.effort = effcmd
+            cmdmsg.name = self.inactivejoints + self.jointnames
+            cmdmsg.position = len(self.inactivejoints) * [float("NaN")] + poscmd
+            cmdmsg.velocity = len(self.inactivejoints) * [float("NaN")] + velcmd
+            cmdmsg.effort = len(self.inactivejoints) * [float("NaN")] + effcmd
             self.pub_jtcmd.publish(cmdmsg)
 
 
@@ -160,9 +161,9 @@ class LocalPlanner(Node):
     # callback for /joint_states
     def cb_jtstate(self, msg):
         # record the current joint posiitons
-        self.q = np.array(msg.position).reshape([3,1])
-        self.qdot = np.array(msg.velocity).reshape([3,1])
-        self.eff = np.array(msg.effort).reshape([3,1])
+        self.q = np.array(msg.position[-3:]).reshape([3,1])
+        self.qdot = np.array(msg.velocity[-3:]).reshape([3,1])
+        self.eff = np.array(msg.effort[-3:]).reshape([3,1])
 
     # callback for /point_cmd
     def cb_pointcmd(self, msg: PosCmdStamped):
@@ -270,16 +271,17 @@ class LocalPlanner(Node):
         self.destroy_subscription(sub)
 
         # Return the values.
-        return [self.grabpos, self.grabvel, self.grabeff]
+        return [self.grabpos[-3:], self.grabvel[-3:], self.grabeff[-3:]]
 
 
-    GRAV_A = -.1275
+
+    GRAV_A = -.75
     GRAV_B = 0.
-    GRAV_C = 2.5
+    GRAV_C = 3
     GRAV_D = 0.
     def gravity(self):
         _, t1, t2 = self.q
-        tau1 = self.GRAV_A * np.sin(-t1 + t2) + \
+        tau1 = 0 * self.GRAV_A * np.sin(-t1 + t2) + \
                self.GRAV_B * np.cos(-t1 + t2) + \
                self.GRAV_C * np.sin(-t1) + \
                self.GRAV_D * np.cos(-t1)

@@ -33,8 +33,8 @@ def generate_launch_description():
         parameters = [{'video_device': '/dev/video0'},
                       {'framerate':    30.0},
                       {'pixel_format': 'yuyv'},
-                      {'image_width':  640},
-                      {'image_height': 480},
+                      {'image_width':  1280},
+                      {'image_height': 720},
                       {'camera_name':  'logitech'}])
 
 
