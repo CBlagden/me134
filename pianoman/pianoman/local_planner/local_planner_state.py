@@ -16,6 +16,7 @@ import rclpy
 from rclpy.node import Node
 
 import numpy as np
+import csv
 
 from pianoman.state_machine.states import State
 from pianoman.utils.rviz_helper import create_pt_marker
@@ -23,6 +24,7 @@ from pianoman.utils.Segments import Goto5, Hold, Stay
 import pianoman.utils.midi_helper as midi_helper
 from pianoman.utils.TransformHelpers import Rotz, R_from_quat
 from pianoman.utils.StateClock import StateClock
+from pianoman.utils.gravitycomp import get_data
 
 from pianoman.local_planner.jointstate_helper import JointStateHelper
 
@@ -36,7 +38,7 @@ from me134_interfaces.srv import NoteCmdStamped
 from std_msgs.msg import Float64MultiArray
 
 RATE = 100.0 # Hz
-LAM = 10
+LAM = 3
 P_BASE_WORLD = np.array([0.043, 0.593, 0.0]).reshape([3,1]) # m
 
 L_IDX = [0, 6, 7, 8]
@@ -93,6 +95,14 @@ class LocalPlanner(Node):
         ## Timers
         self.cmdtimer = self.create_timer(1 / RATE, self.cb_sendcmd)
 
+        self.grav_data = get_data()
+        q1, q2, dur = self.grav_data.pop(0)
+        qd_final = np.array([0, 0, q1, q2, 0, 0, 0]).reshape([7,1])
+        qcur = self.fbk.get_joints_measured()[0]
+        qcur = np.array(qcur).reshape([7,1])
+        self.playsplines.append(Goto5(qcur, qd_final, dur, space='joint'))
+        self.tstart = self.get_clock().now()
+        
     # Main motor timer
     def cb_sendcmd(self):
         # Send commands based on the current state
@@ -104,7 +114,7 @@ class LocalPlanner(Node):
             # Default to floating mode
             poscmd = 7 * [float("NaN")]
             velcmd = 7 * [float("NaN")]
-            effcmd = self.gravity()
+            effcmd = 7 * [float("NaN")]
 
             # check if there is a spline to run
             if (self.playsplines):
@@ -117,6 +127,26 @@ class LocalPlanner(Node):
                     # self.play_clock.restart(t, rostime=True)
                     self.tstart = t
                     self.playsplines.pop(0)
+                    if self.grav_data:
+                        qm, _, _ = self.fbk.get_all_measured()
+
+                        t1_L = qm[7, 0]
+                        t2_L = qm[8, 0]
+                        t1_R = qm[3, 0]
+                        t2_R = qm[4, 0]
+
+                        [_, _, eff1, eff2, _, _, _] = self.fbk.get_joints_measured()[2].flatten()
+
+                        with open('grav_data.csv', 'a') as datafile:
+                            writer = csv.writer(datafile)
+                            writer.writerow([np.sin(-t1_L), np.sin(-t1_L + t2_L), eff1, eff2])
+
+                        q1, q2, dur = self.grav_data.pop(0)
+                        qd_final = np.array([0, 0, q1, q2, 0, 0, 0]).reshape([7,1])
+                        qcur = self.fbk.get_joints_measured()[0]
+                        qcur = np.array(qcur).reshape([7,1])
+                        self.playsplines.append(Goto5(qcur, qd_final, dur, space='joint'))
+                        self.get_logger().info("Going to %.04f, %.04f" % (q1, q2))
                 else:
                     # joint space
                     if (curspline.get_space() == 'joint'):
@@ -192,9 +222,6 @@ class LocalPlanner(Node):
         self.fbk.update_measurements(msg)
 
         [p, _, _, _, _] = self.fbk.fkin()
-        self.get_logger().info("q1: %.04f, q2: %.04f" % (self.fbk.get_joints_measured()[0][2], self.fbk.get_joints_measured()[0][3]))
-        markermsg = create_pt_marker(.5, 0., 0., self.get_clock().now().to_msg())
-        self.pub_goalmarker.publish(markermsg)
 
     def cb_update_kb_pos(self, msg: Pose):
         # technically z never changes but we save it just in case
