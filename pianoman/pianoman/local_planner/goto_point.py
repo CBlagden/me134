@@ -10,53 +10,53 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy
 
-from me134_interfaces.msg import PosCmdStamped
+from me134_interfaces.srv import PosCmdStamped
 
 import math
 import time
+import sys
 
-def main(args=None):
+
+# PARAMETERS:
+POS_L = [-0.5, -0.5, 0.5]
+MOVE_TIME = 3.0
+
+class MinimalClientAsync(Node):
+
+    def __init__(self):
+        super().__init__('minimal_client_async')
+        self.cli = self.create_client(PosCmdStamped, 'point_cmd')
+        while not self.cli.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('service not available, waiting again...')
+        self.req = PosCmdStamped.Request()
+
+    def send_request(self, pos_L, move_time):
+        self.req.move_time.sec = math.floor(move_time)
+        self.req.move_time.nanosec = max(0, math.floor(move_time - math.floor(move_time) * 1e9))
+        
+        self.req.goal.x = pos_L[0]
+        self.req.goal.y = pos_L[1]
+        self.req.goal.z = pos_L[2]
+
+        self.future = self.cli.call_async(self.req)
+        rclpy.spin_until_future_complete(self, self.future)
+        return self.future.result()
+
+
+def main(args=None):    
+    x = float(sys.argv[1])
+    y = float(sys.argv[2])
+    z = float(sys.argv[3])
+
     rclpy.init(args=args)
 
-    node = rclpy.create_node('point_command_publisher')
+    POS_L = [x, y, z]
 
-    qos_profile = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            depth=1
-        )
-    publisher = node.create_publisher(PosCmdStamped, '/point_cmd', qos_profile)
+    minimal_client = MinimalClientAsync()
+    response = minimal_client.send_request(POS_L, MOVE_TIME)
+    minimal_client.get_logger().info(f"Success: {response.success}")
 
-    msg = PosCmdStamped()
-
-    msg.header.stamp = node.get_clock().now().to_msg()
-    msg.header.frame_id = "base_link"
-
-    msg.goal.x = -0.0
-    msg.goal.y = -0.5
-    msg.goal.z = 0.2
-
-    move_time = 10.0
-
-    msg.move_time.sec = math.floor(move_time)
-    msg.move_time.nanosec = max(0, math.floor(move_time - math.floor(move_time) * 1e9))
-
-    # Publish!
-    publisher.publish(msg)
-
-    time.sleep(1.0)
-
-    # def timer_callback():
-    #     msg.data = 'ObiWan Kenobi, please help me. You\'re my only hope'
-    #     publisher.publish(msg)
-
-    # timer_period = 0.5  # seconds
-    # timer = node.create_timer(timer_period, timer_callback)
-
-    # rclpy.spin(node)
-    # node.destroy_timer(timer)
-
-
-    node.destroy_node()
+    minimal_client.destroy_node()
     rclpy.shutdown()
 
 

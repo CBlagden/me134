@@ -77,7 +77,6 @@ def note_to_position(note: str) -> NotePosition:
       x = edge2C2
       y = 1.25
       z = 1.15+0.9605
-      
 
    #convert to metric (in m)
    x = x*0.0254

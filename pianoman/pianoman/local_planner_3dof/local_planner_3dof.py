@@ -33,7 +33,8 @@ from me134_interfaces.srv import NoteCmdStamped
 
 RATE = 100.0 # Hz
 LAM = 10
-P_BASE_WORLD = np.array([0.043, 0.593, 0.0]).reshape([3,1]) # m
+# P_BASE_WORLD = np.array([0.043, 0.593, 0.0]).reshape([3,1]) # m
+P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1])
 
 class LocalPlanner(Node):
     P_HOVER = np.array([-0.5, 0.0, 0.1]).reshape([3,1]) # TODO: make not fixed (moves based on piano)

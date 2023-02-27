@@ -11,11 +11,15 @@
 
 import rclpy
 from rclpy.node import Node
-from me134_interfaces.msg import StateStamped
-
 import numpy as np
 
 from pianoman.state_machine.states import State
+
+from me134_interfaces.msg import StateStamped
+from sensor_msgs.msg    import JointState
+
+GRIP_IDX = [5, 1]
+EFF_THRESHOLD = 0.5 # Nm
 
 class StateMachine(Node):
     def __init__(self):
@@ -29,10 +33,50 @@ class StateMachine(Node):
                 StateStamped, '/robot_state', 1)
 
         ## Subscribers
-        # None
+        self.sub_jtstate = self.create_subscription(\
+                JointState, '/joint_states', self.cb_jtstate, 10)
 
         # Publish the initial state
         self.pub_state.publish(self.getStateMsg())
+
+
+    # Callback for /joint_states
+    def cb_jtstate(self, msg):
+        # Check if the effort is too high
+        eff_measured = np.array(msg.effort).reshape([9,1])
+
+        if (self.state != State.HIT_SOMETHING):
+            # check for high effort
+            for idx, eff in enumerate(eff_measured):
+                if (idx in GRIP_IDX):
+                    if (abs(eff) > 1.0):
+                        # Change the state!
+                        self.state = State.HIT_SOMETHING
+                        self.pub_state.publish(self.getStateMsg())
+                        break
+                else:
+                    if (abs(eff) > 0.5):
+                        # Change the state!
+                        self.state = State.HIT_SOMETHING
+                        self.pub_state.publish(self.getStateMsg())
+                        break
+
+        # TODO: FIX THIS!!! NOT GENERAL
+        elif (self.state == State.HIT_SOMETHING):
+            for idx, eff in enumerate(eff_measured):
+                if (idx in GRIP_IDX):
+                    if (abs(eff) < 1.0):
+                        # Change the state!
+                        self.state = State.PLAY
+                        self.pub_state.publish(self.getStateMsg())
+                        break
+                else:
+                    if (abs(eff) < 0.2):
+                        # Change the state!
+                        self.state = State.PLAY
+                        self.pub_state.publish(self.getStateMsg())
+                        break
+
         
     def getStateMsg(self):
         msg = StateStamped()

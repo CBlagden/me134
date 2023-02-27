@@ -13,25 +13,14 @@ from sensor_msgs.msg    import JointState
 class JointStateHelper:
     def __init__(self, jointnames, L_idx, R_idx, gripper_idx):
         # save the indicies
-        self.jointnames = jointnames
-        self.L_idx = L_idx
-        self.R_idx = R_idx
-        self.gripper_idx = gripper_idx
+        self.jointnames = jointnames.copy()
+        self.L_idx = L_idx.copy()
+        self.R_idx = R_idx.copy()
+        self.gripper_idx = gripper_idx.copy()
         self.joint_idx = [0, 6, 7, 8, 2, 3, 4] # base, left, right
         # self.joint_idx = list(range(len(self.jointnames)))
         # for gi in self.gripper_idx:
         #     # self.joint_idx.remove(gi)
-
-        # also save indicies without gripper
-        self.L_idx_nogrip = self.L_idx
-        self.R_idx_nogrip = self.R_idx
-        for gripvalue in self.gripper_idx:
-            for index, value in enumerate(self.L_idx):
-                if value > gripvalue:
-                    self.L_idx_nogrip[index] = value - 1
-            for index, value in enumerate(self.R_idx):
-                if value > gripvalue:
-                    self.R_idx_nogrip[index] = value - 1
 
         # make fkin objects
         self.chain_L = KinematicChain("base_link", "L_tip_link")
@@ -69,13 +58,16 @@ class JointStateHelper:
         p = np.vstack([p_L, p_R])
         
         # Fill in the Jacobian: 6 x 7
-        # TODO: Jw
         Jv = np.zeros([6, 7])
         Jw = np.zeros([6, 7])
 
         Jv[:, 0] = np.vstack([Jv_L, Jv_R])[:, 0]
         Jv[0:3, 1:4] = Jv_L[:, 1:]
         Jv[3:6, 4:7] = Jv_R[:, 1:]
+
+        Jw[:, 0] = np.vstack([Jw_L, Jw_R])[:, 0]
+        Jw[0:3, 1:4] = Jw_L[:, 1:]
+        Jw[3:6, 4:7] = Jw_R[:, 1:]
 
         return [p, R_L, R_R, Jv, Jw]
 

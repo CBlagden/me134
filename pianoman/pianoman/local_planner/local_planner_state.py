@@ -27,21 +27,21 @@ from pianoman.utils.StateClock import StateClock
 from pianoman.local_planner.jointstate_helper import JointStateHelper
 
 from sensor_msgs.msg    import JointState
-from geometry_msgs.msg  import Pose
+from geometry_msgs.msg  import Pose, PoseStamped
 from visualization_msgs.msg import Marker
-from me134_interfaces.msg import StateStamped, PosCmdStamped
-from me134_interfaces.srv import NoteCmdStamped
+from me134_interfaces.msg import StateStamped, PoseTwoStamped
+from me134_interfaces.srv import NoteCmdStamped, PosCmdStamped
 
 # TODO: remove, make JointCmdStamped
 from std_msgs.msg import Float64MultiArray
 
 RATE = 100.0 # Hz
 LAM = 10
-P_BASE_WORLD = np.array([0.043, 0.593, 0.0]).reshape([3,1]) # m
+P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1]) # m
 
 L_IDX = [0, 6, 7, 8]
 R_IDX = [0, 2, 3, 4]
-GRIP_IDX = [1, 5]
+GRIP_IDX = [5, 1]
 JOINT_NAMES = ["base_joint", \
                 "R_gripper_joint", "R_pan_joint", "R_lower_joint", "R_upper_joint", \
                 "L_gripper_joint", "L_pan_joint", "L_lower_joint", "L_upper_joint"]
@@ -62,11 +62,13 @@ class LocalPlanner(Node):
 
         # general
         self.playsplines = []
-        self.grip_poscmd = [float("NaN"), float("NaN")]
+        self.grip_poscmd = [-0.7, float("NaN")]
+        # self.grip_poscmd = [float("NaN"), float("NaN")]
 
         # state clocks
-        self.clocks = []
+        self.cur_clock = None
         self.play_clock = None
+        self.hit_clock = None
         # time variables
         self.tstart = None
 
@@ -75,18 +77,19 @@ class LocalPlanner(Node):
                 JointState, '/joint_commands', 10)
         self.pub_goalmarker = self.create_publisher(\
                 Marker, '/goal_marker', 10)
+        self.pub_pose = self.create_publisher(PoseTwoStamped, '/pose', 10)
 
         ## Subscribers
         self.sub_jtstate = self.create_subscription(\
                 JointState, '/joint_states', self.cb_jtstate, 10)
-        self.sub_pointcmd = self.create_subscription(\
-                PosCmdStamped, '/point_cmd', self.cb_pointcmd, 10)
         self.sub_jointcmd = self.create_subscription(\
                 Float64MultiArray, '/joint_cmd', self.cb_jointcmd, 10)
         self.sub_kb_pos = self.create_subscription(\
                 Pose, '/keyboarddetector/keyboard_point', self.cb_update_kb_pos, 10)
 
         ## Services
+        self.srv_pointcmd = self.create_service(\
+                PosCmdStamped, '/point_cmd', self.cb_pointcmd)
         self.srv_notecmd = self.create_service(\
                 NoteCmdStamped, '/note_cmd', self.cb_notecmd)
 
@@ -109,13 +112,13 @@ class LocalPlanner(Node):
             # check if there is a spline to run
             if (self.playsplines):
                 curspline = self.playsplines[0]
-                # deltat = self.play_clock.t_since_start(t, rostime=True)
-                deltat = (t - self.tstart).nanoseconds / 1000000000.
+                deltat = self.play_clock.t_since_start(t, rostime=True)
+                # deltat = (t - self.tstart).nanoseconds / 1000000000.
 
                 if (curspline.completed(deltat)):
                     # Remove the spline if completed
-                    # self.play_clock.restart(t, rostime=True)
-                    self.tstart = t
+                    self.play_clock.restart(t, rostime=True)
+                    # self.tstart = t
                     self.playsplines.pop(0)
                 else:
                     # joint space
@@ -138,15 +141,18 @@ class LocalPlanner(Node):
                         Jv = Jv[0:3, 0:4]
                         xcurr = xcurr[0:3,:]  # pull out left arm positions
 
+                        GAM2 = 0.01
+                        Jv_pinv = np.linalg.pinv(Jv.T @ Jv + GAM2*np.eye(4)) @ Jv.T
+
                         # get qdot with J qdot = xdot
                         ex = xd - xcurr
-                        qd_dot = np.linalg.pinv(Jv) @ (xd_dot + LAM * ex)
+                        qd_dot = Jv_pinv @ (xd_dot + LAM * ex)
 
 
                         # get desired q from Euler integration with qdot
                         q, _, _ = self.fbk.get_joints_measured()
-                        # only pull out left
-                        q = q[L_IDX, :]
+                        # only pull out left (first 4)
+                        q = q[0:4, :]
                         qd = q + qd_dot * dt
 
                         # save commands
@@ -180,11 +186,30 @@ class LocalPlanner(Node):
             cmdmsg = self.fbk.to_msg(t, poscmd, velcmd, effcmd, self.grip_poscmd)
             self.pub_jtcmd.publish(cmdmsg)
 
+        if (self.state == State.HIT_SOMETHING):
+            pass
+
 
     ## Callback functions
     # callback for /robot_state
     def cb_updatestate(self, msg):
         self.state = State(msg.state_id)
+
+        # operations for exiting states
+        if (not self.cur_clock):
+            self.cur_clock.pause(self.get_clock().now(), rostime=True)
+
+        # operations for entering states
+        if   (self.state == State.PLAY):
+            self.get_logger().info("Switching to state: PLAY")
+            # update the current clock
+            self.cur_clock = self.play_clock
+        elif (self.state == State.HIT_SOMETHING):
+            self.get_logger().info("Switching to state: HIT_SOMETHING")
+            # update the current clock
+            self.cur_clock = self.hit_clock
+            # reset the hit clock
+            self.cur_clock = StateClock(self.get_clock().now(), rostime=True)
 
     # callback for /joint_states
     def cb_jtstate(self, msg):
@@ -192,9 +217,32 @@ class LocalPlanner(Node):
         self.fbk.update_measurements(msg)
 
         [p, _, _, _, _] = self.fbk.fkin()
-        self.get_logger().info("q1: %.04f, q2: %.04f" % (self.fbk.get_joints_measured()[0][2], self.fbk.get_joints_measured()[0][3]))
-        markermsg = create_pt_marker(.5, 0., 0., self.get_clock().now().to_msg())
-        self.pub_goalmarker.publish(markermsg)
+        # self.get_logger().info(f"pL: {p[0,0]:.3f}, {p[1,0]:.3f}, {p[2,0]:.3f}")
+
+        pose_msg = PoseTwoStamped()
+        p_L = p[:3, 0]
+        p_R = p[3:, 0]
+
+        def _make_pose(arr):
+            p = Pose()
+            p.position.x = arr[0]
+            p.position.y = arr[1]
+            p.position.z = arr[2]
+            return p
+
+        pose_msg.header.stamp = self.get_clock().now().to_msg()
+        pose_msg.header.frame_id = "base_link"
+        pose_msg.pose_left = _make_pose(p_L)
+        pose_msg.pose_right = _make_pose(p_R)
+
+        self.pub_pose.publish(pose_msg)
+
+        # [q, _, _] = self.fbk.get_all_measured()
+        # qL = q[L_IDX]
+        # self.get_logger().info(f"qL: {qL[0,0]:.2f}, {qL[1,0]:.2f}, {qL[2,0]:.2f}, {qL[3,0]:.2f}")
+        # self.get_logger().info(f"FD: {q[0,0]:.2f}, {q[6,0]:.2f}, {q[7,0]:.2f}, {q[8,0]:.2f}")
+        
+        # self.get_logger().info(f"q: {q[0,0]:.2f}, {q[1,0]:.2f}, {q[2,0]:.2f}, {q[3,0]:.2f}, {q[4,0]:.2f}, {q[5,0]:.2f}, {q[6,0]:.2f}, {q[7,0]:.2f}, {q[8,0]:.2f}")
 
     def cb_update_kb_pos(self, msg: Pose):
         # technically z never changes but we save it just in case
@@ -226,7 +274,7 @@ class LocalPlanner(Node):
         self.tstart = self.get_clock().now()
 
     # callback for /point_cmd
-    def cb_pointcmd(self, msg: PosCmdStamped):
+    def cb_pointcmd(self, msg, response):
         #
         self.get_logger().info(f"Got point command: [{msg.goal.x}, {msg.goal.y}, {msg.goal.z}]")
 
@@ -245,11 +293,16 @@ class LocalPlanner(Node):
         self.playsplines.append(Goto5(pcur, pd_final, move_time, space='task'))
         # self.cursplines.append(Hold(pd_final, move_time, space='task'))
         self.playsplines.append(Stay(pd_final, space='task'))
-        self.tstart = self.get_clock().now()
+        # self.tstart = self.get_clock().now()
+        self.play_clock = StateClock(self.get_clock().now(), rostime=True)
 
         # publish the goal point
         markermsg = create_pt_marker(msg.goal.x, msg.goal.y, msg.goal.z, self.get_clock().now().to_msg())
         self.pub_goalmarker.publish(markermsg)
+
+        # tell the service that we suceeded
+        response.success = True
+        return response
 
     def cb_notecmd(self, msg, response):
         """
@@ -263,15 +316,21 @@ class LocalPlanner(Node):
 
         # Convert to world frame
         R_kb_world = Rotz(-np.pi/2) # TODO: update this based on perception
-        note_world = R_kb_world @ note_kb + self.kb_pos
+
+        delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
+        note_world = R_kb_world @ note_kb + delta
+
+        self.get_logger().info(f"Keyboard at {self.kb_pos}")
 
         # print to logger
         self.get_logger().info(f"Added {note} at [{note_world[0]}, {note_world[1]}, {note_world[2]}]")
 
         # Create the trajectory to move to the note
-        pd_offsets = np.array([0.04, -0.07, -0.02]).reshape([3,1]) # m
+        # pd_offsets = np.array([0.04, -0.07, -0.02]).reshape([3,1]) # m
+        pd_offsets = np.array([0., 0., 0.]).reshape([3,1]) # m
         # convert to robot base frame coordinates  and add offsets
         play_pd = Rotz(np.pi) @ ((note_world + pd_offsets) - P_BASE_WORLD)
+        self.get_logger().info(f"Goal point: {play_pd}")
 
         ## Add the note to the trajectory!
         # first move to a point above the note
@@ -286,7 +345,6 @@ class LocalPlanner(Node):
             self.play_clock = StateClock(self.get_clock().now(), rostime=True)
 
         move_time = 0.6 # TODO: compute time based on distance
-        p_start2 = np.vstack([p_start])
         self.playsplines.append(Goto5(p_start, pd_abovenote, move_time, space='task'))
 
         # now move to play the note
@@ -298,6 +356,10 @@ class LocalPlanner(Node):
         self.playsplines.append(Goto5(play_pd, pd_abovenote, move_time, space='task'))
         move_time = 0.6 # TODO: compute time based on distance
         # self.playsplines.append(Goto5(pd_abovenote, self.P_HOVER, move_time, space='task'))
+
+        # publish the goal point
+        markermsg = create_pt_marker(*list(play_pd.flatten()), self.get_clock().now().to_msg())
+        self.pub_goalmarker.publish(markermsg)
 
         response.success = True
         return response
@@ -327,10 +389,6 @@ class LocalPlanner(Node):
         # Return the values.
         return self.fbkmsg
 
-
-    GRAV_A = -0.75
-    GRAV_C = 3
-
     def gravity(self):
         qm, _, _ = self.fbk.get_all_measured()
 
@@ -340,11 +398,12 @@ class LocalPlanner(Node):
         t2_R = qm[4, 0]
 
         def tau1(t1, t2):
-            tau1 = .75 * self.GRAV_A * np.sin(-t1 + t2) + \
-                self.GRAV_C * np.sin(-t1)
+            s1, c1, s2, c2, intr = 2.07471893, 0.21947893, 0.86862002, -0.02721504, 0.12302277
+            tau1 = s1 * np.sin(-t1) + c1 * np.cos(-t1) + s2 * np.sin(-t1 + t2) + c2 * np.cos(-t1 + t2) + intr
             return tau1
         def tau2(t1, t2):
-            tau2 = self.GRAV_A * np.sin(-t1 + t2)
+            s2, c2, intr = -0.79819848, -0.02837958, 0.06094131
+            tau2 = s2 * np.sin(-t1 + t2) + c2 * np.cos(-t1 + t2) + intr
             return tau2
         
         # return 7 * [0.]

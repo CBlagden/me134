@@ -24,9 +24,9 @@ import pianoman.utils.TransformHelpers as TransformHelpers
 
 
 POINTS = np.array([
-    (0.001, 1.227),
-    (0.566, 1.353),
-    (0.571, 0),
+    (0.0, 1.4),
+    (0.6, 1.4),
+    (0.6, 0),
     (0, 0)
 ]).reshape(4, 1, 2).astype(np.float32)
 
