@@ -17,7 +17,7 @@ from rclpy.node import Node
 
 import numpy as np
 
-from pianoman.state_machine.states import State
+from pianoman.local_planner.states import State
 from pianoman.utils.rviz_helper import create_pt_marker
 from pianoman.utils.Segments import Goto5, Hold, Stay
 import pianoman.utils.midi_helper as midi_helper
@@ -26,6 +26,7 @@ from pianoman.utils.StateClock import StateClock
 
 from pianoman.local_planner.jointstate_helper import JointStateHelper
 
+from std_msgs.msg import Empty
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg  import Pose, PoseStamped
 from visualization_msgs.msg import Marker
@@ -49,10 +50,14 @@ JOINT_NAMES = ["base_joint", \
 class LocalPlanner(Node):
     def __init__(self):
         super().__init__('local_planner')
+        # self.get_logger().info("Local planner started.")
 
         ## Class variables
         # state variable
         self.state = State.default()
+        # For updating if hit something:
+        self.eff_cmd_stamp = -1.0
+        self.eff_cmd = np.array(9 * [0.]).reshape([9,1])
         # get initial joint position sensor reading
         self.fbk = JointStateHelper(JOINT_NAMES, L_IDX, R_IDX, GRIP_IDX)
         self.fbk.update_measurements(self.grabfbk())
@@ -86,6 +91,8 @@ class LocalPlanner(Node):
                 Float64MultiArray, '/joint_cmd', self.cb_jointcmd, 10)
         self.sub_kb_pos = self.create_subscription(\
                 Pose, '/keyboarddetector/keyboard_point', self.cb_update_kb_pos, 10)
+        self.sub_pull_kb = self.create_subscription(\
+                Empty, '/pull_keyboard', self.cb_pull_kb, 10)
 
         ## Services
         self.srv_pointcmd = self.create_service(\
@@ -99,6 +106,16 @@ class LocalPlanner(Node):
     # Main motor timer
     def cb_sendcmd(self):
         # Send commands based on the current state
+        if (self.state == State.FLOAT):
+            # Chill in floating mode
+            poscmd = 7 * [float("NaN")]
+            velcmd = 7 * [float("NaN")]
+            effcmd = self.gravity()
+            grip_poscmd = 2*[float("NaN")]
+
+            cmdmsg = self.fbk.to_msg(self.get_clock().now(), poscmd, velcmd, effcmd, grip_poscmd)
+            self.pub_jtcmd.publish(cmdmsg)
+
         if (self.state == State.PLAY):
             # get current time
             t = self.get_clock().now()
@@ -186,31 +203,13 @@ class LocalPlanner(Node):
             cmdmsg = self.fbk.to_msg(t, poscmd, velcmd, effcmd, self.grip_poscmd)
             self.pub_jtcmd.publish(cmdmsg)
 
-        if (self.state == State.HIT_SOMETHING):
-            pass
+            # save effort command and stamp
+            self.eff_cmd = np.array(cmdmsg.effort).reshape([9,1])
+            self.eff_cmd_stamp = cmdmsg.header.stamp.sec + 1e-9 * cmdmsg.header.stamp.nanosec
+
 
 
     ## Callback functions
-    # callback for /robot_state
-    def cb_updatestate(self, msg):
-        self.state = State(msg.state_id)
-
-        # operations for exiting states
-        if (not self.cur_clock):
-            self.cur_clock.pause(self.get_clock().now(), rostime=True)
-
-        # operations for entering states
-        if   (self.state == State.PLAY):
-            self.get_logger().info("Switching to state: PLAY")
-            # update the current clock
-            self.cur_clock = self.play_clock
-        elif (self.state == State.HIT_SOMETHING):
-            self.get_logger().info("Switching to state: HIT_SOMETHING")
-            # update the current clock
-            self.cur_clock = self.hit_clock
-            # reset the hit clock
-            self.cur_clock = StateClock(self.get_clock().now(), rostime=True)
-
     # callback for /joint_states
     def cb_jtstate(self, msg):
         # record the current joint posiitons
@@ -237,12 +236,29 @@ class LocalPlanner(Node):
 
         self.pub_pose.publish(pose_msg)
 
-        # [q, _, _] = self.fbk.get_all_measured()
-        # qL = q[L_IDX]
-        # self.get_logger().info(f"qL: {qL[0,0]:.2f}, {qL[1,0]:.2f}, {qL[2,0]:.2f}, {qL[3,0]:.2f}")
-        # self.get_logger().info(f"FD: {q[0,0]:.2f}, {q[6,0]:.2f}, {q[7,0]:.2f}, {q[8,0]:.2f}")
-        
-        # self.get_logger().info(f"q: {q[0,0]:.2f}, {q[1,0]:.2f}, {q[2,0]:.2f}, {q[3,0]:.2f}, {q[4,0]:.2f}, {q[5,0]:.2f}, {q[6,0]:.2f}, {q[7,0]:.2f}, {q[8,0]:.2f}")
+        ## In all states, check if effort is far from command
+        # first check how old effort command is
+        t_cur = self.get_clock().now().nanoseconds * 1e-9
+        timeout_sec = 0.5 # s
+        EFFTHRESH = 2.5 # Nm
+
+        eff_measured = np.array(msg.effort).reshape([9,1])
+        if (t_cur - self.eff_cmd_stamp > timeout_sec): 
+            # Command is stale... don't compute (TODO: FIX)
+            effdiff = eff_measured
+        else:
+            # command is recent; use the difference with measurement
+            self.eff_cmd = np.nan_to_num(self.eff_cmd, nan=0) # replace NaN values
+            effdiff = eff_measured - self.eff_cmd
+            effdiff = effdiff[[0, 2, 3, 4, 6, 7, 8]] # TODO: incorporate gripper
+            # self.get_logger().info(str((abs(effdiff))))
+
+            # check for a state change
+            # TODO: INCLUDE GRIPPER
+            if (sum(abs(effdiff) > EFFTHRESH) > 0):
+                if (self.state != State.FLOAT):
+                    self.get_logger().info("Hit something! Returning to float mode.")
+                    self.state = State.FLOAT
 
     def cb_update_kb_pos(self, msg: Pose):
         # technically z never changes but we save it just in case
@@ -290,6 +306,7 @@ class LocalPlanner(Node):
         pd_final = np.array(pd_final).reshape([3,1])
 
         move_time = msg.move_time.sec + msg.move_time.nanosec * 1e-9
+        # move_time = distance_to_movetime(pcur, pd_final)
         self.playsplines.append(Goto5(pcur, pd_final, move_time, space='task'))
         # self.cursplines.append(Hold(pd_final, move_time, space='task'))
         self.playsplines.append(Stay(pd_final, space='task'))
@@ -300,6 +317,8 @@ class LocalPlanner(Node):
         markermsg = create_pt_marker(msg.goal.x, msg.goal.y, msg.goal.z, self.get_clock().now().to_msg())
         self.pub_goalmarker.publish(markermsg)
 
+        # update the local planner state
+        self.state = State.PLAY
         # tell the service that we suceeded
         response.success = True
         return response
@@ -315,7 +334,7 @@ class LocalPlanner(Node):
         note_kb = np.array([nx, ny, nz]).reshape([3,1])
 
         # Convert to world frame
-        R_kb_world = Rotz(-np.pi/2) # TODO: update this based on perception
+        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot # Uses perception
 
         delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
         note_world = R_kb_world @ note_kb + delta
@@ -344,7 +363,7 @@ class LocalPlanner(Node):
             # initialize the clock
             self.play_clock = StateClock(self.get_clock().now(), rostime=True)
 
-        move_time = 0.6 # TODO: compute time based on distance
+        move_time = distance_to_movetime(p_start, pd_abovenote)
         self.playsplines.append(Goto5(p_start, pd_abovenote, move_time, space='task'))
 
         # now move to play the note
@@ -354,19 +373,42 @@ class LocalPlanner(Node):
         # finally, move back to a zeroed position by moving up and then across
         move_time = 0.5
         self.playsplines.append(Goto5(play_pd, pd_abovenote, move_time, space='task'))
-        move_time = 0.6 # TODO: compute time based on distance
+        # move_time = 0.6 # TODO: compute time based on distance
         # self.playsplines.append(Goto5(pd_abovenote, self.P_HOVER, move_time, space='task'))
 
         # publish the goal point
         markermsg = create_pt_marker(*list(play_pd.flatten()), self.get_clock().now().to_msg())
         self.pub_goalmarker.publish(markermsg)
-
+        
+        self.state = State.PLAY
         response.success = True
         return response
 
         # publish the goal point
         # markermsg = create_pt_marker(pd_final[0], pd_final[1], pd_final[2], self.get_clock().now().to_msg())
         # self.pub_goalmarker.publish(markermsg)
+
+    def cb_pull_kb(self, _):
+        nx, ny, nz = midi_helper.note_to_position('C2')
+        note_kb = np.array([nx, ny, nz]).reshape([3,1])
+
+        delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
+        delta += np.array([0, 0, 0]).reshape([3,1])
+        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot # TODO: update this based on perception
+        target = R_kb_world @ note_kb + delta
+
+        self.get_logger().info('Target: %f %f %f' % (float(target[0][0]), float(target[1][0]), float(target[2][0])))
+        markermsg = create_pt_marker(*list(target.flatten()), '23rf4')
+        print("TARGET:", target)
+        self.pub_goalmarker.publish(markermsg)
+
+        target[0] *= .8
+        target[1] *= .8
+        
+        self.get_logger().info('Target: %f %f %f' % (float(target[0][0]), float(target[1][0]), float(target[2][0])))
+        markermsg = create_pt_marker(*list(target.flatten()), self.get_clock().now().to_msg())
+        self.pub_goalmarker.publish(markermsg)
+        print("TARGET:", target)
 
 
     ## Helper functions
@@ -406,11 +448,16 @@ class LocalPlanner(Node):
             tau2 = s2 * np.sin(-t1 + t2) + c2 * np.cos(-t1 + t2) + intr
             return tau2
         
-        # return 7 * [0.]
-        # return [0., 0., tau1(t1_L, t2_L), tau2(t1_L, t2_L), 0., 0., 0.]
-        # return [0., 0., 0., 0., 0., tau1(t1_R, t2_R), tau2(t1_R, t2_R)]
         return [0., 0., tau1(t1_L, t2_L), tau2(t1_L, t2_L), 0., tau1(t1_R, t2_R), tau2(t1_R, t2_R)]
 
+
+def distance_to_movetime(pstart, pend):
+    T_MIN = 0.2 # s
+    SPEED = 0.2 # m/s
+
+    dist = np.linalg.norm(pstart - pend)
+    time = max(0.2, dist / SPEED)
+    return time
 
 def main(args=None):
     # intialize ROS node.

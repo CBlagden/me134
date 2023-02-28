@@ -22,9 +22,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "state_machine = pianoman.state_machine.state_machine:main",
             "local_planner = pianoman.local_planner.local_planner_state:main",
-            "local_planner_3dof = pianoman.local_planner_3dof.local_planner_3dof:main",
             "goto_point = pianoman.local_planner.goto_point:main",
             "play_note = pianoman.local_planner.play_note:main",
             "keyboard_detector = pianoman.keyboard_detector.keyboard_detector:main",

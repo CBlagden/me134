@@ -56,7 +56,7 @@ class JointStateHelper:
         [p_L, R_L, Jv_L, Jw_L] = self.chain_L.fkin(self.q_measured[self.L_idx])
         [p_R, R_R, Jv_R, Jw_R] = self.chain_R.fkin(self.q_measured[self.R_idx])
         p = np.vstack([p_L, p_R])
-        
+
         # Fill in the Jacobian: 6 x 7
         Jv = np.zeros([6, 7])
         Jw = np.zeros([6, 7])
@@ -71,7 +71,6 @@ class JointStateHelper:
 
         return [p, R_L, R_R, Jv, Jw]
 
-    
     # message helper
     def to_msg(self, t, q, qdot, eff, grip_q):
         # concatincate q with grip_q

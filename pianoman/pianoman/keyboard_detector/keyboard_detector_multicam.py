@@ -172,12 +172,6 @@ class KeyboardNode(Node):
                 # we get the normalized image coordinates
                 coords_undistorted = cv2.undistortPoints(bottom_lefts, self.camK, self.camD)
 
-                # we make the normalized image coordinates homogeneous
-                coords = np.concatenate([coords_undistorted, np.ones((len(bottom_lefts), 1, 1))], axis=-1)
-
-                # we multiple by the perspective transform to obtain the world coordinates
-                coords = coords @ self.M.T
-
                 for i, id in enumerate(ids):
                     if id == KEYBOARD_ID:
                         # we get the normalized image coordinate from undistortPoints
@@ -212,11 +206,6 @@ class KeyboardNode(Node):
                                        z=quat[2],
                                        w=quat[3])
                         pose.orientation = q
-
-                        # # using perspective transform to get point
-                        point = coords[i].flatten()
-                        x_c = point[0] / point[2]
-                        y_c = point[1] / point[2]
 
                         self.get_logger().info("solvePnP point " + str(point_w))
                         self.get_logger().info("perspective point " + str(point))

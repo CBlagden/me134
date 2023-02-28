@@ -6,9 +6,9 @@
 from enum import Enum
 
 class State(Enum):
+    FLOAT = 0
     PLAY = 1
-    HIT_SOMETHING = 2
 
     @classmethod
     def default(cls):
-        return cls.PLAY
+        return cls.FLOAT
