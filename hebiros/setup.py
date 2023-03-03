@@ -25,6 +25,7 @@ setup(
             "hebinode = hebiros.hebinode:main",
             "hebiscan = hebiros.hebiscan:main",
             "testsend = hebiros.testsend:main",
+            "hebitune = hebiros.hebitune:main",
         ],
     },
 )

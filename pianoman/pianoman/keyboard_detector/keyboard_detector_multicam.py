@@ -38,7 +38,7 @@ POINTS_3D = np.array([
     (0.0, 0.0, 0.0)
 ]).reshape(4, 1, 3).astype(np.float32)
 
-Z_OFFSET = 0.065 # cm
+Z_OFFSET = 0.065 # cm 
 PUBLISH_RATE = .01
 KEYBOARD_ID = 4 # TODO: define actual keyboard id - and this should support multiple tags to account for accidental occlusions
 

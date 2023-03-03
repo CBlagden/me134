@@ -19,7 +19,7 @@ import sys
 
 # PARAMETERS:
 POS_L = [-0.5, -0.5, 0.5]
-MOVE_TIME = 3.0
+MOVE_TIME = 5.0
 
 class MinimalClientAsync(Node):
 
@@ -30,30 +30,51 @@ class MinimalClientAsync(Node):
             self.get_logger().info('service not available, waiting again...')
         self.req = PosCmdStamped.Request()
 
-    def send_request(self, pos_L, move_time):
+    def send_request(self, move_time, pos_L, pos_R):
         self.req.move_time.sec = math.floor(move_time)
         self.req.move_time.nanosec = max(0, math.floor(move_time - math.floor(move_time) * 1e9))
         
-        self.req.goal.x = pos_L[0]
-        self.req.goal.y = pos_L[1]
-        self.req.goal.z = pos_L[2]
+        self.req.goal_left.x = pos_L[0]
+        self.req.goal_left.y = pos_L[1]
+        self.req.goal_left.z = pos_L[2]
+
+        if (pos_R):
+            self.req.goal_right.x = pos_R[0]
+            self.req.goal_right.y = pos_R[1]
+            self.req.goal_right.z = pos_R[2]
+
+            self.req.left_only = False
 
         self.future = self.cli.call_async(self.req)
         rclpy.spin_until_future_complete(self, self.future)
         return self.future.result()
 
 
-def main(args=None):    
-    x = float(sys.argv[1])
-    y = float(sys.argv[2])
-    z = float(sys.argv[3])
+def main(args=None):
+
+    if (len(sys.argv) == 4):
+        # just command left arm
+        x = float(sys.argv[1])
+        y = float(sys.argv[2])
+        z = float(sys.argv[3])
+        POS_L = [x, y, z]
+        POS_R = None
+    elif (len(sys.argv) == 7):
+        x1 = float(sys.argv[1])
+        y1 = float(sys.argv[2])
+        z1 = float(sys.argv[3])
+        POS_L = [x1, y1, z1]
+
+        x2 = float(sys.argv[4])
+        y2 = float(sys.argv[5])
+        z2 = float(sys.argv[6])
+        POS_R = [x2, y2, z2]
+        
 
     rclpy.init(args=args)
 
-    POS_L = [x, y, z]
-
     minimal_client = MinimalClientAsync()
-    response = minimal_client.send_request(POS_L, MOVE_TIME)
+    response = minimal_client.send_request(MOVE_TIME, POS_L, POS_R)
     minimal_client.get_logger().info(f"Success: {response.success}")
 
     minimal_client.destroy_node()

@@ -22,6 +22,8 @@ blackKeyWidth = 0.56
 halfBlackKey = blackKeyWidth/2
 halfBtwnSpacing = btwnSpacing/2
 
+C = 0 #was previously 0.75, i don't think we need this anymore though
+
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 noteDistance = [0.0, # C
                0.0 + halfKey + 0.1775 - halfBlackKey, # C#
@@ -66,16 +68,16 @@ def note_to_position(note: str) -> NotePosition:
 
       x = edge2C2 + octave*octaveDist + noteDistance[localNote]
       if localNote in [1, 3, 6, 8, 10]: #if it's a black key, adjust the y
-         y = 3
+         y = 3 + C
          z = 1.15 + 0.9605 + 0.395
       else: #note is a white key
-         y = 1.25 #(ALSO IN INCHES I'M SORRY)
+         y = 1.25 + C#(ALSO IN INCHES I'M SORRY)
          z = 1.15 + 0.9605
    else:
       print("not a valid note, double check octave settings")
       #play C instead
       x = edge2C2
-      y = 1.25
+      y = 1.25 + C
       z = 1.15+0.9605
 
    #convert to metric (in m)

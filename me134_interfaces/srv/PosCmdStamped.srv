@@ -1,6 +1,8 @@
 std_msgs/Header header
 builtin_interfaces/Duration move_time
-geometry_msgs/Point goal
+geometry_msgs/Point goal_left
+geometry_msgs/Point goal_right
 
+bool left_only true
 ---
 bool success false

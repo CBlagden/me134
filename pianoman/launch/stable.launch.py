@@ -87,7 +87,7 @@ def generate_launch_description():
             # start the other three nodes
             node_robot_state_publisher_ACTUAL,
             # node_robot_state_publisher_COMMAND,
-            node_rviz,
+            # node_rviz,
             # Start the hebi.
             node_hebi,
         ]

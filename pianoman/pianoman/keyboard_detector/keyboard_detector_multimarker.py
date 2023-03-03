@@ -40,13 +40,38 @@ POINTS_3D = np.array([
 
 Z_OFFSET = 0.065 # cm
 PUBLISH_RATE = .01
-KEYBOARD_ID = 4 # TODO: define actual keyboard id - and this should support multiple tags to account for accidental occlusions
+CORNER_IDS = [0, 1, 2, 3]
+KEYBOARD_IDS = [4, 5] # TODO: define actual keyboard id - and this should support multiple tags to account for accidental occlusions
 
 CORNER_OFFSET = np.array([
     # -0.016 , -0.011, 0.0
     0.0, 0.0, 0.0
 ]).reshape((3, 1))
 
+KB_MARKER_ANGLE_OFFSET = -0.1082
+
+
+def undistorted_to_world(coords_undistorted, rvec, tvec):
+    # we get the normalized image coordinate from undistortPoints
+    normalized_point = list(coords_undistorted.flatten())
+
+    # we make the point homogeneous
+    normalized_point = np.array([*normalized_point, 1.0]).reshape((3, 1))
+
+    Rot, _ = cv2.Rodrigues(rvec)
+    R_inv = np.linalg.inv(Rot)
+
+    # we solve the left and right hand sides of the equation for lambda
+    left_side = R_inv @ normalized_point
+    right_side = R_inv @ tvec
+    lambda_ = (Z_OFFSET + right_side[2][0]) / left_side[2][0]
+
+    # once we have lambda_ we can project from normalized image coordinates to
+    # world coordinates
+    point_w = R_inv @ (lambda_ * normalized_point - tvec)
+    point_w = point_w + CORNER_OFFSET
+
+    return point_w
 
 #
 #  Detector Node Class
@@ -98,6 +123,8 @@ class KeyboardNode(Node):
             rclpy.spin_once(self)
         self.destroy_subscription(sub)
 
+        self.rot = None
+
         self.get_logger().info("Publishing image transform data...")
 
     # Shutdown
@@ -133,18 +160,16 @@ class KeyboardNode(Node):
                 (topLeft, topRight, bottomRight, bottomLeft) = box[0]
                 center = (topLeft + bottomRight)/2
 
-                if id == KEYBOARD_ID:
+                if id in KEYBOARD_IDS:
                     if topLeft[1] != topRight[1] or topLeft[0] != bottomLeft[0]:
                         delta_y = topLeft[0] - bottomLeft[0]
                         delta_x = bottomLeft[1] - topLeft[1]
                         rot = -np.arctan2(delta_y, delta_x)
                     else:
                         rot = 0
-
-                    self.get_logger().info(str("rotation: " + str(np.degrees(rot))))
-
+                    
                 # Draw the box around the marker.
-                pts = [box.reshape(-1,1,2).astype(int)]
+                pts = np.array([box.reshape(-1,1,2).astype(int)])
                 cv2.polylines(frame, pts, True, self.green, 2)
 
                 # Draw the center circle and write the ID there.
@@ -154,15 +179,22 @@ class KeyboardNode(Node):
                 cv2.putText(frame, str(id), ctr,
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.green, 2)
 
-
+            marker_id_to_idx = {}
+            markers = {}
             corner_markers = {}
-            for (box, id) in zip(boxes, ids.flatten()):
-                if 0 <= id <= 3:
-                    corner_markers[id] = box[0][3]
+            keyboard_markers = {}
+            for idx, (box, id) in enumerate(zip(boxes, ids.flatten())):
+                marker_id_to_idx[id] = idx
+                markers[id] = box[0]
+                if id in CORNER_IDS:
+                    corner_markers[id] = box[0]
+                elif id in KEYBOARD_IDS:
+                    keyboard_markers[id] = box[0]
 
             if len(corner_markers) == 4:
+                bottom_lefts = [corners[3] for corners in corner_markers.values()]
                 self.get_logger().info("Four corners detected... recomputing perspective transform")
-                corner_markers_image_points = np.array(list(corner_markers.values())).reshape(4, 1, 2)
+                corner_markers_image_points = np.array(list(bottom_lefts)).reshape(4, 1, 2)
                 corresponding_points = POINTS[list(corner_markers.keys())]
                 corresponding_points_3D = POINTS_3D[list(corner_markers.keys())]
 
@@ -173,72 +205,74 @@ class KeyboardNode(Node):
 
 
             if self.M is not None:
-                bottom_lefts = np.array([box[0][3] for box in boxes]).reshape(len(boxes), 1, 2)
+                bottom_lefts = [corners[3] for corners in markers.values()]
+                bottom_lefts_arr = np.array(bottom_lefts).reshape(len(boxes), 1, 2)
 
                 # we get the normalized image coordinates
-                coords_undistorted = cv2.undistortPoints(bottom_lefts, self.camK, self.camD)
+                coords_undistorted = cv2.undistortPoints(bottom_lefts_arr, self.camK, self.camD)
 
                 # To print perspective comparisons:
                 # we make the normalized image coordinates homogeneous
-                coords = np.concatenate([coords_undistorted, np.ones((len(bottom_lefts), 1, 1))], axis=-1)
-                # we multiple by the perspective transform to obtain the world coordinates
+                coords = np.concatenate([coords_undistorted, np.ones((len(bottom_lefts_arr), 1, 1))], axis=-1)
+                # we multiply by the perspective transform to obtain the world coordinates
                 coords = coords @ self.M.T
 
-                for i, id in enumerate(ids):
-                    if id == KEYBOARD_ID:
-                        keyboard_coords = boxes[i]
-                        keyboard_coords_undistorted = cv2.undistortPoints(keyboard_coords, self.camK, self.camD)
-                        (topLeft, topRight, _, bottomLeft) = [(keyboard_coords_undistorted[i][0][0], keyboard_coords_undistorted[i][0][1]) for i in range(4)]
-                        self.get_logger().info("top left: %.04f, %.04f" % (topLeft[0], topLeft[1]))
-                        if topLeft[1] != topRight[1] or topLeft[0] != bottomLeft[0]:
-                            delta_y = topLeft[0] - bottomLeft[0]
-                            delta_x = bottomLeft[1] - topLeft[1]
-                            rot = -np.arctan2(delta_y, delta_x)
-                        else:
-                            rot = 0
-                        # we get the normalized image coordinate from undistortPoints
-                        normalized_point = list(coords_undistorted[i].flatten())
+                # if len(keyboard_markers) == 1:
+                #     kb_marker_id, kb_marker_coords = list(keyboard_markers.items())[0]
+                #     kb_marker_idx = marker_id_to_idx[kb_marker_id]
+                #     keyboard_coords_undistorted = cv2.undistortPoints(kb_marker_coords, self.camK, self.camD)
+                #     (topLeft, topRight, _, bottomLeft) = [(keyboard_coords_undistorted[i][0][0], keyboard_coords_undistorted[i][0][1]) for i in range(4)]
+                #     if topLeft[1] != topRight[1] or topLeft[0] != bottomLeft[0]:
+                #         delta_y = topLeft[0] - bottomLeft[0]
+                #         delta_x = bottomLeft[1] - topLeft[1]
+                #         rot = -np.arctan2(delta_y, delta_x)
+                #     else:
+                #         rot = 0
+                if len(keyboard_markers) == 2:
+                    self.get_logger().info("Two detected!")
+                    marker_1, marker_2 = keyboard_markers[KEYBOARD_IDS[0]], keyboard_markers[KEYBOARD_IDS[1]]
+                    marker_1_undistorted = cv2.undistortPoints(marker_1, self.camK, self.camD)[0]
+                    marker_2_undistorted = cv2.undistortPoints(marker_2, self.camK, self.camD)[0]
+                    center_1 = np.array([(np.mean(marker_1_undistorted[:, 0])), float(np.mean(marker_1_undistorted[:, 1]))]).reshape(1, 2)
+                    center_2 = np.array([float(np.mean(marker_2_undistorted[:, 0])), float(np.mean(marker_2_undistorted[:, 1]))]).reshape(1, 2)
+                    center_1_world = undistorted_to_world(center_1, self.rvec, self.tvec)
+                    center_2_world = undistorted_to_world(center_2, self.rvec, self.tvec)
+                    delta_y = center_2_world[1][0] - center_1_world[1][0]
+                    delta_x = center_2_world[0][0] - center_1_world[0][0]
+                    self.rot = np.arctan2(delta_x, -delta_y) + KB_MARKER_ANGLE_OFFSET
 
-                        # we make the point homogeneous
-                        normalized_point = np.array([*normalized_point, 1.0]).reshape((3, 1))
+                    c1 = np.array((float(np.mean(marker_1[:, 0])), float(np.mean(marker_1[:, 1]))))
+                    next_pt = c1 + np.array([500 * np.cos(self.rot), -500 * np.sin(self.rot)])
+                    pts = np.array([np.vstack([c1, next_pt]).astype(int)])
+                    cv2.polylines(frame, pts, True, self.white, 2)
 
-                        Rot, _ = cv2.Rodrigues(self.rvec)
-                        R_inv = np.linalg.inv(Rot)
 
-                        # we solve the left and right hand sides of the equation for lambda
-                        left_side = R_inv @ normalized_point
-                        right_side = R_inv @ self.tvec
-                        lambda_ = (Z_OFFSET + right_side[2][0]) / left_side[2][0]
+                if KEYBOARD_IDS[0] in keyboard_markers.keys():
+                    kb_marker_idx = marker_id_to_idx[KEYBOARD_IDS[0]]
 
-                        # once we have lambda_ we can project from normalized image coordinates to
-                        # world coordinates
-                        point_w = R_inv @ (lambda_ * normalized_point - self.tvec)
-                        point_w = point_w + CORNER_OFFSET
-                        point_w = list(point_w.flatten())
+                    self.get_logger().info(str("rotation (world): " + str(np.degrees(self.rot))))
+                    point_w = list(undistorted_to_world(coords_undistorted[marker_id_to_idx[KEYBOARD_IDS[0]]], self.rvec, self.tvec).flatten())
+                    point = Point(x=point_w[0],
+                                    y=point_w[1],
+                                    z=point_w[2])
+                    pose = Pose()
+                    pose.position = point
+                    quat = list(TransformHelpers.quat_from_R(TransformHelpers.Rotz(self.rot)))
+                    q = Quaternion(x=quat[0],
+                                    y=quat[1],
+                                    z=quat[2],
+                                    w=quat[3])
+                    pose.orientation = q
 
-                        point = Point(x=point_w[0],
-                                      y=point_w[1],
-                                      z=point_w[2])
-                        pose = Pose()
-                        pose.position = point
+                    # # using perspective transform to get point
+                    point = coords[kb_marker_idx].flatten()
+                    x_c = point[0] / point[2]
+                    y_c = point[1] / point[2]
 
-                        quat = list(TransformHelpers.quat_from_R(TransformHelpers.Rotz(rot)))
-                        q = Quaternion(x=quat[0],
-                                       y=quat[1],
-                                       z=quat[2],
-                                       w=quat[3])
-                        pose.orientation = q
+                    self.get_logger().info("solvePnP point " + str(point_w))
+                    self.get_logger().info("perspective point " + str(point))
 
-                        # # using perspective transform to get point
-                        point = coords[i].flatten()
-                        x_c = point[0] / point[2]
-                        y_c = point[1] / point[2]
-
-                        self.get_logger().info("solvePnP point " + str(point_w))
-                        self.get_logger().info("perspective point " + str(point))
-
-                        self.pub_kb_pos.publish(pose)
-                        break
+                    self.pub_kb_pos.publish(pose)
 
             self.pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 #

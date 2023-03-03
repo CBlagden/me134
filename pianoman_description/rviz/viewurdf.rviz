@@ -183,7 +183,20 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /goal_marker
+        Value: /goal_marker_L
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Marker
+      Namespaces:
+        "": true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_marker_R
       Value: true
   Enabled: true
   Global Options:
@@ -238,9 +251,9 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.1377323418855667
-        Y: -0.2189866006374359
-        Z: 0.40652355551719666
+        X: 0.1515171378850937
+        Y: 0.08107371628284454
+        Z: 0.3460390865802765
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false

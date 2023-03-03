@@ -50,11 +50,23 @@ class JointStateHelper:
         return [self.q_measured, self.qdot_measured, self.eff_measured]
 
     # Compute the 6 x 9 Jacobian
-    def fkin(self):
-        assert self.q_measured is not None, "Call update_measurements before calling fkin"
+    def fkin(self, q_measured = None):
+        if (q_measured is None):
+            q_measured = self.q_measured
+            q_measured_L = q_measured[self.L_idx]
+            q_measured_R = q_measured[self.R_idx]
+            assert self.q_measured is not None, "Call update_measurements before calling fkin"
+        elif (len(q_measured) == 7):
+            q_measured_L = q_measured[0:4, :]
+            q_measured_R = q_measured[[0,4,5,6]]
+        elif (len(q_measured) == 4):
+            # default to left only
+            q_measured_L = q_measured[0:4, :]
+            q_measured_R = np.array([0.0, 0.0, 0.0, 0.0])
+
         # compute the two chains
-        [p_L, R_L, Jv_L, Jw_L] = self.chain_L.fkin(self.q_measured[self.L_idx])
-        [p_R, R_R, Jv_R, Jw_R] = self.chain_R.fkin(self.q_measured[self.R_idx])
+        [p_L, R_L, Jv_L, Jw_L] = self.chain_L.fkin(q_measured_L)
+        [p_R, R_R, Jv_R, Jw_R] = self.chain_R.fkin(q_measured_R)
         p = np.vstack([p_L, p_R])
 
         # Fill in the Jacobian: 6 x 7

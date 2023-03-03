@@ -1,10 +1,15 @@
 std_msgs/Header header
-# the actual note (defaults to C4)
-string note "C4"
+# the actual note
+string note_left "C3"
+string note_right "C5"
 
 # other playing characteristics
-float64 hold_time 0.5 # s
-uint8 force 100 # relative to MIDI
+float64 hold_time_left 0.5 # s
+float64 hold_time_right 0.5 # s
 
+uint8 force_left 100 # relative to MIDI
+uint8 force_right 100
+
+bool left_only true
 ---
 bool success false
