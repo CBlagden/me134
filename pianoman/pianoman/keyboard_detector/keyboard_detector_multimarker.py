@@ -48,10 +48,14 @@ CORNER_OFFSET = np.array([
     0.0, 0.0, 0.0
 ]).reshape((3, 1))
 
+POINT_AVERAGE_OFFSET = np.array([
+  0.833/2, 0.165/2, 0.0
+]).reshape((3, 1))
+
 KB_MARKER_ANGLE_OFFSET = -0.1082
 
 
-def undistorted_to_world(coords_undistorted, rvec, tvec):
+def undistorted_to_world(coords_undistorted, rvec, tvec, z_offset):
     # we get the normalized image coordinate from undistortPoints
     normalized_point = list(coords_undistorted.flatten())
 
@@ -64,7 +68,7 @@ def undistorted_to_world(coords_undistorted, rvec, tvec):
     # we solve the left and right hand sides of the equation for lambda
     left_side = R_inv @ normalized_point
     right_side = R_inv @ tvec
-    lambda_ = (Z_OFFSET + right_side[2][0]) / left_side[2][0]
+    lambda_ = (z_offset + right_side[2][0]) / left_side[2][0]
 
     # once we have lambda_ we can project from normalized image coordinates to
     # world coordinates
@@ -99,7 +103,7 @@ class KeyboardNode(Node):
         self.dict   = cv2.aruco.Dictionary_get(cv2.aruco.DICT_5X5_50)
         self.params = cv2.aruco.DetectorParameters_create()
 
-        # Report. 
+        # Report.
         self.get_logger().info("Keyboard detector running...")
 
         # Get camera info
@@ -167,7 +171,7 @@ class KeyboardNode(Node):
                         rot = -np.arctan2(delta_y, delta_x)
                     else:
                         rot = 0
-                    
+
                 # Draw the box around the marker.
                 pts = np.array([box.reshape(-1,1,2).astype(int)])
                 cv2.polylines(frame, pts, True, self.green, 2)
@@ -211,6 +215,11 @@ class KeyboardNode(Node):
                 # we get the normalized image coordinates
                 coords_undistorted = cv2.undistortPoints(bottom_lefts_arr, self.camK, self.camD)
 
+                # for key, val in corner_markers.items():
+                #     if ids[key] not in KEYBOARD_IDS:
+                #         point = list(undistorted_to_world(coords_undistorted[key], self.rvec, self.tvec, Z_OFFSET).flatten())
+                #         self.get_logger().info(f"marker {ids[key]}: point {point}")
+
                 # To print perspective comparisons:
                 # we make the normalized image coordinates homogeneous
                 coords = np.concatenate([coords_undistorted, np.ones((len(bottom_lefts_arr), 1, 1))], axis=-1)
@@ -235,8 +244,8 @@ class KeyboardNode(Node):
                     marker_2_undistorted = cv2.undistortPoints(marker_2, self.camK, self.camD)[0]
                     center_1 = np.array([(np.mean(marker_1_undistorted[:, 0])), float(np.mean(marker_1_undistorted[:, 1]))]).reshape(1, 2)
                     center_2 = np.array([float(np.mean(marker_2_undistorted[:, 0])), float(np.mean(marker_2_undistorted[:, 1]))]).reshape(1, 2)
-                    center_1_world = undistorted_to_world(center_1, self.rvec, self.tvec)
-                    center_2_world = undistorted_to_world(center_2, self.rvec, self.tvec)
+                    center_1_world = undistorted_to_world(center_1, self.rvec, self.tvec, Z_OFFSET)
+                    center_2_world = undistorted_to_world(center_2, self.rvec, self.tvec, Z_OFFSET)
                     delta_y = center_2_world[1][0] - center_1_world[1][0]
                     delta_x = center_2_world[0][0] - center_1_world[0][0]
                     self.rot = np.arctan2(delta_x, -delta_y) + KB_MARKER_ANGLE_OFFSET
@@ -247,17 +256,27 @@ class KeyboardNode(Node):
                     cv2.polylines(frame, pts, True, self.white, 2)
 
 
-                if KEYBOARD_IDS[0] in keyboard_markers.keys():
+                if KEYBOARD_IDS[0] in keyboard_markers.keys() and KEYBOARD_IDS[1] in keyboard_markers.keys():
                     kb_marker_idx = marker_id_to_idx[KEYBOARD_IDS[0]]
 
                     self.get_logger().info(str("rotation (world): " + str(np.degrees(self.rot))))
-                    point_w = list(undistorted_to_world(coords_undistorted[marker_id_to_idx[KEYBOARD_IDS[0]]], self.rvec, self.tvec).flatten())
+                    point_w = list(undistorted_to_world(coords_undistorted[marker_id_to_idx[KEYBOARD_IDS[0]]], self.rvec, self.tvec, Z_OFFSET).flatten())
+
+                    Rot_mat = TransformHelpers.Rotz(self.rot)
+
+                    point_kb_origin = list(undistorted_to_world(coords_undistorted[marker_id_to_idx[KEYBOARD_IDS[0]]], self.rvec, self.tvec, Z_OFFSET).flatten())
+                    point_kb_opposite = list(undistorted_to_world(coords_undistorted[marker_id_to_idx[KEYBOARD_IDS[1]]], self.rvec, self.tvec, Z_OFFSET).flatten())
+
+                    point_w_mean = np.mean([np.array(point_kb_origin), np.array(point_kb_opposite)], axis=0).reshape((3, 1))
+                    point_w_mean = point_w_mean - TransformHelpers.Rotz(-np.pi/2) @ Rot_mat @ POINT_AVERAGE_OFFSET
+                    point_w = list(point_w_mean.flatten())
+
                     point = Point(x=point_w[0],
                                     y=point_w[1],
                                     z=point_w[2])
                     pose = Pose()
                     pose.position = point
-                    quat = list(TransformHelpers.quat_from_R(TransformHelpers.Rotz(self.rot)))
+                    quat = list(TransformHelpers.quat_from_R(Rot_mat))
                     q = Quaternion(x=quat[0],
                                     y=quat[1],
                                     z=quat[2],

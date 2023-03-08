@@ -53,14 +53,17 @@ def _note_to_midi_value(note: str) -> int:
     return midi_value
 
 
-def note_to_position(note: str) -> NotePosition:
+
+
+def note_to_position(note) -> NotePosition:
    """
       Maps between notes and keyboard positions.
       Given a message.note as specified in the Mido library, returns the x and y position of the note relative to a fixed position on the keyboard: 
    """
    #we define (0,0) as the lower left hand corner of the keyboard
    #we will also assume that the lowest ley is C2 and the highest key is C6
-   note = _note_to_midi_value(note)
+   if isinstance(note, str):
+       note = _note_to_midi_value(note)
 
    if note >= 36 and note <= 84: #determines if this is a valid note
       octave = (note-36)//12 #determines which local octave we're working in
@@ -131,18 +134,35 @@ def _get_trajectory(track: List[Message],
       bpm: The beats per minute at which the song should be played.
    """
    trajectory = []
+   start_time = 0.0
    for msg in track:
       if not msg.is_meta:
          delta_sec = msg.time / ticks_per_beat / bpm * 60
          if msg.type == 'note_on':
             start_time += delta_sec
          elif msg.type == 'note_off':
-            # TODO: convert this into a relative keyboard position instead
-            # note, octave = number_to_note(msg.note)
             x, y, z = note_to_position(msg.note)
 
             end_time = start_time + delta_sec
-            trajectory.append((start_time, end_time), (x, y))
+            trajectory.append([(start_time, end_time), (x, y, z)])
 
             start_time = end_time
    return trajectory
+
+
+
+
+if __name__ == '__main__':
+    filename = '/home/robot134/songs/ode_to_joy.mid'
+    left_traj, right_traj = note_trajectories(filename, bpm=120)
+    print(left_traj)
+
+    print(right_traj)
+
+
+
+
+
+
+
+

@@ -21,23 +21,23 @@ from pianoman.local_planner.states import State
 from pianoman.utils.rviz_helper import create_pt_marker
 from pianoman.utils.Segments import Goto5, Hold, Stay
 import pianoman.utils.midi_helper as midi_helper
-from pianoman.utils.TransformHelpers import Rotz, R_from_quat, Rotx
+from pianoman.utils.TransformHelpers import Rotz, R_from_quat
 from pianoman.utils.StateClock import StateClock
 
 from pianoman.local_planner.jointstate_helper import JointStateHelper
 
 from std_msgs.msg import Empty
 from sensor_msgs.msg    import JointState
-from geometry_msgs.msg  import Pose, PoseStamped
+from geometry_msgs.msg  import Pose
 from visualization_msgs.msg import Marker
-from me134_interfaces.msg import StateStamped, PoseTwoStamped
+from me134_interfaces.msg import PoseTwoStamped
 from me134_interfaces.srv import NoteCmdStamped, PosCmdStamped
 
 # TODO: remove, make JointCmdStamped
 from std_msgs.msg import Float64MultiArray
 
 RATE = 100.0 # Hz
-LAM = 40
+LAM = 18
 
 # P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1]) # m
 P_BASE_WORLD = np.array([-0.018 + 0.03, 0.69 + 0.01, 0.0]).reshape([3, 1]) # m
@@ -60,6 +60,7 @@ class LocalPlanner(Node):
         # For updating if hit something:
         self.eff_cmd_stamp = -1.0
         self.eff_cmd = np.array(9 * [0.]).reshape([9,1])
+        self.position_cmd = np.array(6 * [0.]).reshape([6,1])
         # get initial joint position sensor reading
         self.fbk = JointStateHelper(JOINT_NAMES, L_IDX, R_IDX, GRIP_IDX)
         self.fbk.update_measurements(self.grabfbk())
@@ -68,7 +69,7 @@ class LocalPlanner(Node):
         self.kb_rot = None
 
         q0, _, _ = self.fbk.get_joints_measured()
-        self.qd = q0[0:4, :]
+        self.qd = q0
 
         # general
         self.playsplines = []
@@ -90,6 +91,7 @@ class LocalPlanner(Node):
         self.pub_goalmarker_R = self.create_publisher(\
                 Marker, '/goal_marker_R', 10)
         self.pub_pose = self.create_publisher(PoseTwoStamped, '/pose', 10)
+        self.pub_pose_err = self.create_publisher(PoseTwoStamped, '/pose_error', 10)
 
         ## Subscribers
         self.sub_jtstate = self.create_subscription(\
@@ -119,6 +121,10 @@ class LocalPlanner(Node):
             velcmd = 7 * [float("NaN")]
             effcmd = self.gravity()
             self.grip_poscmd = [float("NaN"), float("NaN")]
+
+            q, _, _ = self.fbk.get_joints_measured()
+            self.qd = q
+            self.playsplines = []
 
             cmdmsg = self.fbk.to_msg(self.get_clock().now(), poscmd, velcmd, effcmd, self.grip_poscmd)
             self.pub_jtcmd.publish(cmdmsg)
@@ -154,71 +160,107 @@ class LocalPlanner(Node):
                         velcmd = list(qd_dot.reshape([7]))
 
                         q, _, _ = self.fbk.get_joints_measured()
-                        self.qd = q[0:4, :]
+                        self.qd = q
 
-                    # Just move the left arm (TODO: allow arm selection)
-                    elif (curspline.get_space() == 'task'):
-                        # pull out end effector coordinates
-                        [xd, xd_dot] = curspline.evaluate(deltat)
-                        xd = xd.reshape([3,1])
-                        xd_dot = xd_dot.reshape([3,1])
-
-                        # run through forward kinematics
+                    # For task space moves
+                    elif (curspline.get_space() == 'task' or curspline.get_space() == '2task'):
+                        # start with forward kinematics
                         [xcurr, _, _, Jv, _] = self.fbk.fkin(self.qd)
 
-                        # remove the last three columns of Jv (they correspond to the right arm)
-                        Jv = Jv[0:3, 0:4]
-                        xcurr = xcurr[0:3,:]  # pull out left arm positions
+                        # start with space-specific parts
+                        if (curspline.get_space() == 'task'):
+                            # left arm only
+                            num_arms = 1
+                            # remove the last three columns of Jv (they correspond to the right arm)
+                            Jv = Jv[0:3, 0:4]
+                            xcurr = xcurr[0:3,:]  # pull out left arm positions
+
+                        elif (curspline.get_space() == '2task'):
+                            # both arms
+                            num_arms = 2
+
+                            # both arms does not need to change Jv or xcurr
+
+                        # pull out end effector coordinates
+                        [xd, xd_dot] = curspline.evaluate(deltat)
+                        self.position_cmd = xd.copy().reshape([3 * num_arms,1]) # save xd for laters
+                        xd = xd.reshape([3 * num_arms,1])
+                        xd_dot = xd_dot.reshape([3 * num_arms,1])
+
+                        qd = self.qd[0:(1 + 3 * num_arms)]
 
                         # Weighted pseudoinverse for singularity prevention
                         GAM2 = 0.01
-                        Jv_pinv = np.linalg.pinv(Jv.T @ Jv + GAM2*np.eye(4)) @ Jv.T
-                        # Jv_pinv = np.linalg.pinv(Jv)
+                        Jv_pinv = np.linalg.pinv(Jv.T @ Jv + GAM2*np.eye(1 + 3*num_arms)) @ Jv.T
+                        # Jv_pinv = np.linalg.pinv(Jv) # UNCOMMENT TO REMOVE SINGULARITY PREVENTION
 
                         # get qdot with J qdot = xdot
                         ex = xd - xcurr
                         qd_dot = Jv_pinv @ (xd_dot + LAM * ex)
 
-                        # Secondary task to keep pan joint towards 0 degrees
-                        # q_secondary_goal = np.copy(q)
-                        # q_secondary_goal[0, 0] = 0
-                        # lambda_s = 0.1
-                        # qd_sec = lambda_s * (q_secondary_goal - q)
-                        # qd_dot = Jv_pinv @ (xd_dot + LAM * ex) + (np.eye(4) - Jv_pinv @ Jv) @ qd_sec
+                        # Secondary task to keep pan joint aligned with keyboard orientation
+                        # and elbow pointing up
+                        
+                        q_sec_goal = np.zeros((1+3*num_arms, 1)) 
+                        keyboardOrientation = np.arctan2(self.kb_rot[1, 0], self.kb_rot[0, 0])
+                        
+                        q_sec_goal[0, 0] = keyboardOrientation # base pan joint should track keyboard orientation
 
-                        # get desired q from Euler integration with qdot
-                        self.qd += qd_dot * dt
+                        l_base = 0.3
+                        l_pan = 0.1
+                        l_lower = 0.3
+                        l_upper = 0.3
 
-                        # save commands
-                        poscmd = list(self.qd.reshape([4])) + 3 * [float("NaN")]
-                        velcmd = list(qd_dot.reshape([4])) + 3 * [float("NaN")]
-                    
-                    # left and right task space move
-                    elif (curspline.get_space() == '2task'):
-                        # TODO: change ex to use xd_prev instead of xd
-                        # pull out end effector coordinates
-                        [xd, xd_dot] = curspline.evaluate(deltat)
-                        xd = xd.reshape([6,1])
-                        xd_dot = xd_dot.reshape([6,1])
+                        if num_arms == 1:
+                            lambda_s = np.array([l_base, l_pan, l_lower, l_upper]).reshape((4, 1))
+                            # we only have a left arm
+                            q_sec_goal[2, 0] = 0.9 # left lower joint
+                            q_sec_goal[3, 0] = -1.2 # left upper joint
+                            
+                            qd_sec = lambda_s * (q_sec_goal - qd)
 
-                        # run through forward kinematics
-                        [xcurr, _, _, Jv, _] = self.fbk.fkin(self.qd)
+                            qd_sec[1, 0] = 0.0 # left pan joint stays free
 
-                        # Weighted pseudoinverse for singularity prevention
-                        GAM2 = 0.01
-                        Jv_pinv = np.linalg.pinv(Jv.T @ Jv + GAM2*np.eye(7)) @ Jv.T
-                        # Jv_pinv = np.linalg.pinv(Jv)
+                        else:
+                            # we have two arms, yay us!  
+                            lambda_s = np.array([l_base, l_pan, l_lower, l_upper, l_pan, l_lower, l_upper]).reshape((7, 1))
+                            q_sec_goal[2, 0] = 0.9 # right lower joint
+                            q_sec_goal[3, 0] = -1.2 # right upper joint
+                            q_sec_goal[5, 0] = -0.9 # left lower joint
+                            q_sec_goal[6, 0] = 1.2 # left upper joint
+                            
+                            qd_sec = lambda_s * (q_sec_goal - qd)
+                            qd_sec[1, 0] = 0.0 # right pan joint stays free
+                            qd_sec[4, 0] = 0.0 # left pan joint stays free
 
-                        # get qdot with J qdot = xdot
-                        ex = xd - xcurr
+                        # Add a secondary task to prevent the robot from running through the table
+                        # Quadratic cost C(q1) = k q1^2 -> dC = 2k q1 = LAM_UP * q1
+                        # LAM_UP = 1
+                        # qdot_sec = np.array([-LAM_UP * self.qd[0,0], -LAM_UP * self.qd[1,0], -LAM_UP*2 * self.qd[2,0], -LAM_UP*2 * self.qd[3,0]]).reshape([4,1])
+                        # if (num_arms == 2):
+                        #     qdot_sec = np.vstack([qdot_sec, np.array([-LAM_UP * self.qd[4,0], -LAM_UP*2 * self.qd[5,0], -LAM_UP*2 * self.qd[6,0]]).reshape([3,1])])
+
+
                         qd_dot = Jv_pinv @ (xd_dot + LAM * ex)
+                        # Map secondary tasks to the null space
+                        
+                        qd_dot += (np.eye(1 + 3 * num_arms) - Jv_pinv @ np.linalg.pinv(Jv_pinv)) @ qd_sec # COMMENT OUT TO REMOVE SECONDARY TASKS
 
                         # get desired q from Euler integration with qdot
-                        self.qd += qd_dot * dt
+                        
+                        qd += qd_dot * dt
+                        self.qd[0:(1 + 3 * num_arms)] = qd # TODO: TEST/CHECK
 
                         # save commands
-                        poscmd = list(self.qd.reshape([7]))
-                        velcmd = list(qd_dot.reshape([7]))
+                        if (curspline.get_space() == 'task'):
+                            poscmd = list(self.qd[:4, 0].reshape([4])) + 3 * [float("NaN")]
+                            velcmd = list(qd_dot.reshape([4])) + 3 * [float("NaN")]
+                        elif (curspline.get_space() == '2task'):
+                            poscmd = list(self.qd.reshape([7]))
+                            velcmd = list(qd_dot.reshape([7]))
+            else:
+                self.state = State.FLOAT
+                
 
             # Publish!
             cmdmsg = self.fbk.to_msg(t, poscmd, velcmd, effcmd, self.grip_poscmd)
@@ -228,6 +270,14 @@ class LocalPlanner(Node):
             self.eff_cmd = np.array(cmdmsg.effort).reshape([9,1])
             self.eff_cmd_stamp = cmdmsg.header.stamp.sec + 1e-9 * cmdmsg.header.stamp.nanosec
 
+    def cb_songcmd(self, msg, response):
+        """
+            Given a message with a path to a midi file, parses the file
+            and plays the accompanying song
+        """
+        filename = msg.data
+        left_traj, right_traj = midi_helper.note_trajectories(filename)
+        
 
 
     ## Callback functions
@@ -239,6 +289,7 @@ class LocalPlanner(Node):
         [p, _, _, _, _] = self.fbk.fkin()
         # self.get_logger().info(f"pL: {p[0,0]:.3f}, {p[1,0]:.3f}, {p[2,0]:.3f}")
 
+        # Publish current pose
         pose_msg = PoseTwoStamped()
         p_L = p[:3, 0]
         p_R = p[3:, 0]
@@ -257,7 +308,20 @@ class LocalPlanner(Node):
 
         self.pub_pose.publish(pose_msg)
 
-        ## In all states, check if effort is far from command
+        # publish pose error
+        pose_err_msg = PoseTwoStamped()
+
+        pose_err_msg.header.stamp = self.get_clock().now().to_msg()
+        pose_err_msg.header.frame_id = "base_link"
+        pose_err_msg.pose_left =  _make_pose(p_L - self.position_cmd[:3, 0])
+        if (len(self.position_cmd) == 6):
+            pose_err_msg.pose_right = _make_pose(p_R - self.position_cmd[3:, 0])
+
+        self.pub_pose_err.publish(pose_err_msg) # TODO: CHECK THIS
+        
+
+
+        # In all states, check if effort is far from command
         # first check how old effort command is
         t_cur = self.get_clock().now().nanoseconds * 1e-9
         timeout_sec = 0.5 # s
@@ -334,9 +398,9 @@ class LocalPlanner(Node):
             self.pub_goalmarker_L.publish(markermsg)
 
             # Set qd to be actual q
-            # WARNING: DO NOT DO THIS FOR NOTES
-            q, _, _ = self.fbk.get_joints_measured()
-            self.qd = q[0:4, :]
+            # # WARNING: DO NOT DO THIS FOR NOTES
+            # q, _, _ = self.fbk.get_joints_measured()
+            # self.qd = q[0:4, :]
             
             self.grip_poscmd = [-0.7, float("NaN")]
         else:
@@ -358,9 +422,9 @@ class LocalPlanner(Node):
 
             self.grip_poscmd = 2 * [-0.7]
 
-            # WARNING: DO NOT DO THIS FOR NOTES
-            q, _, _ = self.fbk.get_joints_measured()
-            self.qd = q
+            # # WARNING: DO NOT DO THIS FOR NOTES
+            # q, _, _ = self.fbk.get_joints_measured()
+            # self.qd = q
 
         # create the splines
         # print("pcur {}".format(pcur))
@@ -390,7 +454,6 @@ class LocalPlanner(Node):
             return response
 
         # Keyboard position stuff (ONLY uses perception)
-        # R_kb_world = Rotz(-np.pi/2) @ self.kb_rot # Uses perception (TODO: FIX FOR BETTER ROT)
         R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
         delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
 
@@ -422,7 +485,7 @@ class LocalPlanner(Node):
             pd_offsets = np.array([0., 0., -0.02]).reshape([3,1]) # m
             # convert to robot base frame coordinates  and add offsets
             play_pd = Rotz(np.pi) @ ((note_world + pd_offsets) - P_BASE_WORLD)
-            self.get_logger().info(f"Goal point: {play_pd}")
+            self.get_logger().info(f"Goal point: {play_pd.reshape([3])}")
 
             ## Add the note to the trajectory!
             # first move to a point above the note
@@ -434,8 +497,8 @@ class LocalPlanner(Node):
 
             self.grip_poscmd = [-0.7, float("NaN")]
 
-            q, _, _ = self.fbk.get_joints_measured()
-            self.qd = q[0:4, :]
+            # q, _, _ = self.fbk.get_joints_measured()
+            # self.qd = q[0:4, :]
 
             p_start = p_start[0:3, :]
             move_time_initial = distance_to_movetime(p_start, pd_abovenote)
@@ -462,7 +525,8 @@ class LocalPlanner(Node):
             # convert to robot base frame coordinates  and add offsets
             play_pd_L = Rotz(np.pi) @ ((note_L_world + pd_offsets) - P_BASE_WORLD)
             play_pd_R = Rotz(np.pi) @ ((note_R_world + pd_offsets) - P_BASE_WORLD)
-            self.get_logger().info(f"Goal point: {play_pd_L}")
+            self.get_logger().info(f"Left goal point: {play_pd_L}")
+            self.get_logger().info(f"Right goal point: {play_pd_R}")
 
             ## Add the note to the trajectory!
             # first move to a point above the note
@@ -480,23 +544,22 @@ class LocalPlanner(Node):
             self.grip_poscmd = [-0.7, -0.7]
             move_time_initial = distance_to_movetime(p_start, pd_abovenote)
 
-            q, _, _ = self.fbk.get_joints_measured()
-            self.qd = q
+            # q, _, _ = self.fbk.get_joints_measured()
+            # self.qd = q
 
 
         self.playsplines.append(Goto5(p_start, pd_abovenote, 1 * move_time_initial, space=space))
 
         # now move to play the note
-        move_time = 1 *0.3 # TODO: compute based on desired force
+        move_time = 0.3 # TODO: compute based on desired force
         self.playsplines.append(Goto5(pd_abovenote, play_pd, move_time, space=space))
 
         hold_time = msg.hold_time_left
         self.playsplines.append(Goto5(play_pd, play_pd, hold_time, space=space))
 
         # finally, move back to a zeroed position by moving up and then across
-        move_time = 1 * 0.6
+        move_time = 0.6 # TODO: compute time based on distance
         self.playsplines.append(Goto5(play_pd, pd_abovenote, move_time, space=space))
-        # move_time = 0.6 # TODO: compute time based on distance
         # self.playsplines.append(Goto5(pd_abovenote, self.P_HOVER, move_time, space='task'))
     
         self.state = State.PLAY

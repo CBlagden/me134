@@ -70,7 +70,8 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"family": "robotlab"},
-            {"motors": ["7.7", "8.3", "7.5", "7.4", "7.3", "7.1", "7.6", "8.4", "7.2"]},
+            # {"motors": ["7.7", "8.3", "7.5", "7.4", "7.3", "7.1", "7.6", "8.4", "7.2"]},
+            {"motors": ["7.7", "8.3", "7.4", "7.5", "7.3", "7.1", "8.4", "7.6", "7.2"]},
             {"joints": ["base_joint", "R_gripper_joint", "R_pan_joint", "R_lower_joint", "R_upper_joint", "L_gripper_joint", "L_pan_joint", "L_lower_joint", "L_upper_joint"]},
         ],
     )

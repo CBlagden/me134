@@ -436,7 +436,7 @@
     name="L_tip_joint"
     type="fixed">
     <origin
-      xyz="0.393 0 0"
+      xyz="0.385 0 -0.015"
       rpy="0 0 0" />
     <parent
       link="L_upper_link" />
@@ -460,7 +460,7 @@
     name="R_tip_joint"
     type="fixed">
     <origin
-      xyz="0.393 0 0"
+      xyz="0.385 0 -0.015"
       rpy="0 0 0" />
     <parent
       link="R_upper_link" />
