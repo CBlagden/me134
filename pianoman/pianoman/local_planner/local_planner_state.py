@@ -59,7 +59,7 @@ class LocalPlanner(Node):
 
         ## Class variables
         # state variable
-        self.state = State.PLAY
+        self.state = State.default()
         # For updating if hit something:
         self.eff_cmd_stamp = -1.0
         self.eff_cmd = np.array(9 * [0.]).reshape([9,1])
@@ -117,7 +117,7 @@ class LocalPlanner(Node):
 
         self.grav_data = get_data()
         q1, q2, dur = self.grav_data.pop(0)
-        qd_final = np.array([0, q1, 0, q2, 0, 0, 0]).reshape([7,1])
+        qd_final = np.array([0, 0, 0, 0, q1, 0, q2]).reshape([7,1])
         qcur = self.fbk.get_joints_measured()[0]
         qcur = np.array(qcur).reshape([7,1])
         self.playsplines.append(Goto5(qcur, qd_final, dur, space='joint'))
@@ -163,20 +163,20 @@ class LocalPlanner(Node):
                     self.playsplines.pop(0)
                     if self.grav_data:
                         qm, _, _ = self.fbk.get_all_measured()
-
-                        t1_L = qm[7, 0]
+                        
+                        t1_L = qm[6, 0]
                         t2_L = qm[8, 0]
-                        t1_R = qm[3, 0]
+                        t1_R = qm[2, 0]
                         t2_R = qm[4, 0]
 
-                        [_, _, eff1, eff2, _, _, _] = self.fbk.get_joints_measured()[2].flatten()
+                        [_, _, _, _, eff1, _, eff2] = self.fbk.get_joints_measured()[2].flatten()
 
-                        with open('grav_data_L.csv', 'a') as datafile:
+                        with open('grav_data_R.csv', 'a') as datafile:
                             writer = csv.writer(datafile)
-                            writer.writerow([np.sin(-t1_L), np.sin(-t1_L + t2_L), eff1, eff2])
+                            writer.writerow([np.sin(-t1_R), np.sin(-t1_R + t2_R), eff1, eff2])
 
                         q1, q2, dur = self.grav_data.pop(0)
-                        qd_final = np.array([0, q1, 0, q2, 0, 0, 0]).reshape([7,1])
+                        qd_final = np.array([0, 0, 0, 0, q1, 0, q2]).reshape([7,1])
                         qcur = self.fbk.get_joints_measured()[0]
                         qcur = np.array(qcur).reshape([7,1])
                         self.playsplines.append(Goto5(qcur, qd_final, dur, space='joint'))
@@ -644,21 +644,29 @@ class LocalPlanner(Node):
     def gravity(self):
         qm, _, _ = self.fbk.get_all_measured()
 
-        t1_L = qm[7, 0]
+        t1_L = qm[6, 0]
         t2_L = qm[8, 0]
-        t1_R = qm[3, 0]
+        t1_R = qm[2, 0]
         t2_R = qm[4, 0]
 
-        def tau1(t1, t2):
-            s1, c1, s2, c2, intr = 2.07471893, 0.21947893, 0.86862002, -0.02721504, 0.12302277
+        def tau1_L(t1, t2):
+            s1, c1, s2, c2, intr = 1.75577270e+00, 1.34368784e-02, 7.59615585e-01, 1.59857587e-03, 0.04459261 # new
             tau1 = s1 * np.sin(-t1) + c1 * np.cos(-t1) + s2 * np.sin(-t1 + t2) + c2 * np.cos(-t1 + t2) + intr
             return tau1
-        def tau2(t1, t2):
-            s2, c2, intr = -0.79819848, -0.02837958, 0.06094131
+        def tau2_L(t1, t2):
+            s2, c2, intr = -0.77427977, -0.03220803, 0.05437264 # new
             tau2 = s2 * np.sin(-t1 + t2) + c2 * np.cos(-t1 + t2) + intr
             return tau2
-        
-        return [0., 0., tau1(t1_L, t2_L), tau2(t1_L, t2_L), 0., tau1(t1_R, t2_R), tau2(t1_R, t2_R)]
+        def tau1_R(t1, t2):
+            s1, c1, s2, c2, intr = 1.79597092, -0.00402647,  0.76979722, -0.02256849, 0.09761762
+            tau1 = s1 * np.sin(-t1) + c1 * np.cos(-t1) + s2 * np.sin(-t1 + t2) + c2 * np.cos(-t1 + t2) + intr
+            return tau1
+        def tau2_R(t1, t2):
+            s2, c2, intr = -0.69745138, 0.01699976, 0.01269389 # new
+            tau2 = s2 * np.sin(-t1 + t2) + c2 * np.cos(-t1 + t2) + intr
+            return tau2
+
+        return [0., tau1_L(t1_L, t2_L), 0., tau2_L(t1_L, t2_L), tau1_R(t1_R, t2_R), 0., tau2_R(t1_R, t2_R)]
 
 
 def distance_to_movetime(pstart, pend):
