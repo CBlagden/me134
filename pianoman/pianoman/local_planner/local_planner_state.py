@@ -15,6 +15,7 @@
 import rclpy
 from rclpy.node import Node
 
+import scipy.linalg
 import numpy as np
 
 from pianoman.local_planner.states import State
@@ -74,7 +75,6 @@ class LocalPlanner(Node):
         # general
         self.playsplines = []
         self.grip_poscmd = [float("NaN"), float("NaN")]
-        # self.grip_poscmd = [float("NaN"), float("NaN")]
 
         # state clocks
         self.cur_clock = None
@@ -128,6 +128,8 @@ class LocalPlanner(Node):
 
             cmdmsg = self.fbk.to_msg(self.get_clock().now(), poscmd, velcmd, effcmd, self.grip_poscmd)
             self.pub_jtcmd.publish(cmdmsg)
+
+            self.get_logger().info("In floating mode")
 
         if (self.state == State.PLAY):
             # get current time
@@ -193,6 +195,15 @@ class LocalPlanner(Node):
                         GAM2 = 0.01
                         Jv_pinv = np.linalg.pinv(Jv.T @ Jv + GAM2*np.eye(1 + 3*num_arms)) @ Jv.T
                         # Jv_pinv = np.linalg.pinv(Jv) # UNCOMMENT TO REMOVE SINGULARITY PREVENTION
+
+                        # if one of the singular values is too small, we are near a singularity
+                        # and so should return back to floating mode
+                        SINGULARITY_THRESHOLD = 1e-4 # DON'T LOWER THIS IT'S SCARY!
+                        s = scipy.linalg.svdvals(Jv)
+                        if np.any(s < SINGULARITY_THRESHOLD):
+                            self.get_logger().info("Value too small!!")
+                            self.state = State.FLOAT
+                        self.get_logger().info(f"Singular values {s}")
 
                         # get qdot with J qdot = xdot
                         ex = xd - xcurr
@@ -344,6 +355,7 @@ class LocalPlanner(Node):
                 if (self.state != State.FLOAT):
                     self.get_logger().info("Hit something! Returning to float mode.")
                     self.state = State.FLOAT
+
 
     def cb_update_kb_pos(self, msg: Pose):
         # technically z never changes but we save it just in case
@@ -613,9 +625,9 @@ class LocalPlanner(Node):
     def gravity(self):
         qm, _, _ = self.fbk.get_all_measured()
 
-        t1_L = qm[6, 0]
+        t1_L = qm[7, 0]
         t2_L = qm[8, 0]
-        t1_R = qm[2, 0]
+        t1_R = qm[3, 0]
         t2_R = qm[4, 0]
 
         def tau1_L(t1, t2):
@@ -635,7 +647,7 @@ class LocalPlanner(Node):
             tau2 = s2 * np.sin(-t1 + t2) + c2 * np.cos(-t1 + t2) + intr
             return tau2
 
-        return [0., tau1_L(t1_L, t2_L), 0., tau2_L(t1_L, t2_L), tau1_R(t1_R, t2_R), 0., tau2_R(t1_R, t2_R)]
+        return [0., 0., tau1_L(t1_L, t2_L), tau2_L(t1_L, t2_L), 0., tau1_R(t1_R, t2_R), tau2_R(t1_R, t2_R)]
 
 
 def distance_to_movetime(pstart, pend):
