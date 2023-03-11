@@ -17,6 +17,8 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions                import Node
 
 
+use_depth = False
+
 #
 # Generate the Launch Description
 #
@@ -39,24 +41,16 @@ def generate_launch_description():
                       {'image_height': 720},
                       {'camera_name':  'logitech'}])
 
-    # Configure the keyboard detector node
-    node_keyboard = Node(
-        name       = 'keyboard',
-        package    = 'pianoman',
-        executable = 'keyboard_detector',
-        output     = 'screen',
-        remappings = [('/image_raw', '/usb_cam/image_raw'),
-                      ('/camera_info', '/usb_cam/camera_info')])
-
 
     # Use the standard realsense launch description.  But override
     # what we need.
+    print(f"LOCATION {pkgdir('realsense2_camera')}")
     rsfile = os.path.join(pkgdir('realsense2_camera'), 'launch/rs_launch.py')
 
     # Profile is Width x Height x FPS.  0 is default.
     rsargs = {'camera_name':             'camera',  # camera unique name
               'depth_module.profile':    '0,0,0',   # depth W, H, FPS
-              'rgb_camera.profile':      '0,0,0',   # color W, H, FPS
+              'rgb_camera.profile':      '1280,720,30',   # color W, H, FPS
               'enable_color':            'true',    # enable color stream
               'enable_infra1':           'false',   # enable infra1 stream
               'enable_infra2':           'false',   # enable infra2 stream
@@ -69,14 +63,33 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(rsfile),
         launch_arguments=rsargs.items())
 
+
+    if use_depth:
+        remappings = [('/image_raw', '/camera/color/image_raw'),
+                      ('/camera_info', '/camera/color/camera_info'),
+                      ('/depth_image_raw', '/camera/depth/image_raw'),
+                      ('/depth_camera_info', '/camera/depth/camera_info')]
+
+    else:
+        remappings = [('/image_raw', '/usb_cam/image_raw'),
+                      ('/camera_info', '/usb_cam/camera_info')]
+
+    # Configure the keyboard detector node
+    node_keyboard = Node(
+        name       = 'keyboard',
+        package    = 'pianoman',
+        executable = 'keyboard_detector',
+        output     = 'screen',
+        remappings = remappings)
+    
+
     ######################################################################
     # COMBINE THE ELEMENTS INTO ONE LIST
+
+    if use_depth:
+        launch_args = [incl_realsense, node_keyboard]
+    else:
+        launch_args = [node_usbcam, node_keyboard]
     
     # Return the description, built as a python list.
-    return LaunchDescription([
-
-        # Start the nodes.
-        node_usbcam,
-        # incl_realsense,
-        node_keyboard,
-    ])
+    return LaunchDescription(launch_args)

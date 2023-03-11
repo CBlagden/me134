@@ -129,7 +129,6 @@ class LocalPlanner(Node):
             cmdmsg = self.fbk.to_msg(self.get_clock().now(), poscmd, velcmd, effcmd, self.grip_poscmd)
             self.pub_jtcmd.publish(cmdmsg)
 
-            self.get_logger().info("In floating mode")
 
         if (self.state == State.PLAY):
             # get current time
@@ -201,9 +200,7 @@ class LocalPlanner(Node):
                         SINGULARITY_THRESHOLD = 1e-4 # DON'T LOWER THIS IT'S SCARY!
                         s = scipy.linalg.svdvals(Jv)
                         if np.any(s < SINGULARITY_THRESHOLD):
-                            self.get_logger().info("Value too small!!")
                             self.state = State.FLOAT
-                        self.get_logger().info(f"Singular values {s}")
 
                         # get qdot with J qdot = xdot
                         ex = xd - xcurr
