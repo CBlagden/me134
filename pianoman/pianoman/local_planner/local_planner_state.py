@@ -96,8 +96,6 @@ class LocalPlanner(Node):
         ## Subscribers
         self.sub_jtstate = self.create_subscription(\
                 JointState, '/joint_states', self.cb_jtstate, 10)
-        self.sub_jointcmd = self.create_subscription(\
-                Float64MultiArray, '/joint_cmd', self.cb_jointcmd, 10)
         self.sub_kb_pos = self.create_subscription(\
                 Pose, '/keyboarddetector/keyboard_point', self.cb_update_kb_pos, 10)
         self.sub_pull_kb = self.create_subscription(\
@@ -153,19 +151,8 @@ class LocalPlanner(Node):
                     self.playsplines.pop(0)
 
                 else:
-                    # joint space
-                    if (curspline.get_space() == 'joint'):
-                        # WARNING: UNTESTED
-                        [qd, qd_dot] = curspline.evaluate(deltat)
-
-                        poscmd = list(qd.reshape([7]))
-                        velcmd = list(qd_dot.reshape([7]))
-
-                        q, _, _ = self.fbk.get_joints_measured()
-                        self.qd = q
-
                     # For task space moves
-                    elif (curspline.get_space() == 'task' or curspline.get_space() == '2task'):
+                    if (curspline.get_space() == 'task' or curspline.get_space() == '2task'):
                         # start with forward kinematics
                         [xcurr, _, _, Jv, _] = self.fbk.fkin(self.qd)
 
@@ -358,27 +345,6 @@ class LocalPlanner(Node):
                                             msg.orientation.y,
                                             msg.orientation.z,
                                             msg.orientation.w])).reshape((3, 3))
-
-    # callback for /joint_cmd
-    def cb_jointcmd(self, msg: Float64MultiArray):
-        #
-        self.get_logger().info("Got joint command: {}".format(msg.data))
-
-        # reset spline list
-        self.playsplines = []
-        # Use this to initiate/reset splines between cartesian positions
-        qd_final = list(msg.data)
-        qcur = self.fbk.get_joints_measured()[0]
-
-        print("qcur {}".format(qcur))
-        qd_final = np.array(qd_final).reshape([7,1])
-        qcur = np.array(qcur).reshape([7,1])
-
-        move_time = 20
-        self.playsplines.append(Goto5(qcur, qd_final, move_time, space='joint'))
-        # self.cursplines.append(Hold(pd_final, move_time, space='task'))
-        self.playsplines.append(Stay(qd_final, space='joint'))
-        self.tstart = self.get_clock().now()
 
     # callback for /point_cmd
     def cb_pointcmd(self, msg, response):
