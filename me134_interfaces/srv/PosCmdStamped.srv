@@ -3,6 +3,7 @@ builtin_interfaces/Duration move_time
 geometry_msgs/Point goal_left
 geometry_msgs/Point goal_right
 
-bool left_only true
+bool cmd_left false
+bool cmd_right false
 ---
 bool success false

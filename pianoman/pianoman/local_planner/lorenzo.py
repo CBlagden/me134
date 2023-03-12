@@ -565,7 +565,136 @@ class LocalPlanner(Node):
                     self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
 
                 # step 2: get note position in robot frame
-                pd_offsets = np.array([0., 0., -0.01]).reshape([3,1]) # m
+                pd_offsets = np.array([0., 0., -0.1]).reshape([3,1]) # m
+                note_world = note_world + pd_offsets
+                note_robot = Rotz(np.pi) @ (note_world - P_BASE_WORLD)
+
+                # step 3: define intermediate points
+                # point above the note
+                pd_abovenote = note_robot + np.array([0.0, 0.0, 0.04]).reshape([3,1]) # m
+
+                ## Generate and save splines
+                # spline to above the note
+                move_time = distance_to_movetime(p_start, pd_abovenote)
+                spline1_abovenote = Goto5(p_start, pd_abovenote, move_time, space='task')
+
+                # spline to play the note
+                move_time = 0.3 # TODO: compute based on desired force
+                spline2_tonote = Goto5(pd_abovenote, note_robot, move_time, space='task')
+
+                # hold at the note
+                hold_time = msg.hold_time_left
+                spline3_holdnote = Goto5(note_robot, note_robot, hold_time, space='task')
+
+                # move back up above the note
+                move_time = distance_to_movetime(note_robot, pd_abovenote)
+                spline4_afternote = Goto5(note_robot, pd_abovenote, move_time, space='task')
+
+                # SAVE SPLINES
+                if (self.playsplines[0] == None):
+                    self.playsplines[0] = [spline1_abovenote]
+                else:
+                    self.playsplines[0].append(spline1_abovenote)
+                self.playsplines[0].append(spline2_tonote)
+                self.playsplines[0].append(spline3_holdnote)
+                self.playsplines[0].append(spline4_afternote)
+                
+                # set the gripper to closed
+                self.grip_poscmd[0] = -0.7
+
+            # RIGHT_NOTE
+            if (msg.cmd_right):
+                note_R = msg.note_right
+                # extract location of note in keyboard frame
+                nx, ny, nz = midi_helper.note_to_position(note_R)
+                note_kb = np.array([nx, ny, nz]).reshape([3,1])
+
+                # convert to world frame
+                note_world = R_kb_world @ note_kb + delta
+
+                ## Create the trajectory to move to the note
+                # step 1: get starting robot position
+                if (self.playsplines[1]):
+                    # pull last position from last spline
+                    tend = self.playsplines[1][-1].get_duration()
+                    p_start, _ = self.playsplines[1][-1].evaluate(tend)
+                else:
+                    # pull current position
+                    [p_start, _, _, _, _] = self.fbk.fkin()
+                    p_start = p_start[3:6, :]
+                    # initialize the clock
+                    self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
+
+                # step 2: get note position in robot frame
+                pd_offsets = np.array([0., 0., -0.02]).reshape([3,1]) # m
+                note_world = note_world + pd_offsets
+                note_robot = Rotz(np.pi) @ (note_world - P_BASE_WORLD)
+
+                # step 3: define intermediate points
+                # point above the note
+                pd_abovenote = note_robot + np.array([0.0, 0.0, 0.04]).reshape([3,1]) # m
+
+                ## Generate and save splines
+                # spline to above the note
+                move_time = distance_to_movetime(p_start, pd_abovenote)
+                spline1_abovenote = Goto5(p_start, pd_abovenote, move_time, space='task')
+
+                # spline to play the note
+                move_time = 0.3 # TODO: compute based on desired force
+                spline2_tonote = Goto5(pd_abovenote, note_robot, move_time, space='task')
+
+                # hold at the note
+                hold_time = msg.hold_time_right
+                spline3_holdnote = Goto5(note_robot, note_robot, hold_time, space='task')
+
+                # move back up above the note
+                move_time = distance_to_movetime(note_robot, pd_abovenote)
+                spline4_afternote = Goto5(note_robot, pd_abovenote, move_time, space='task')
+
+                # SAVE SPLINES
+                if (self.playsplines[1] == None):
+                    self.playsplines[1] = [spline1_abovenote]
+                else:
+                    self.playsplines[1].append(spline1_abovenote)
+                self.playsplines[1].append(spline2_tonote)
+                self.playsplines[1].append(spline3_holdnote)
+                self.playsplines[1].append(spline4_afternote)
+                
+                # set the gripper to closed
+                self.grip_poscmd[1] = -0.7
+
+        if (msg.space == 'keyboard'):
+            # convert everything to KEYBOARD space
+
+            # LEFT_NOTE
+            if (msg.cmd_left):
+                note_L = msg.note_left
+                # extract location of note in keyboard frame
+                nx, ny, nz = midi_helper.note_to_position(note_L)
+                note_kb = np.array([nx, ny, nz]).reshape([3,1])
+
+                ## Create the trajectory to move to the note
+                # step 1: get starting robot position
+                if (self.playsplines[0]):
+                    # pull last position from last spline
+                    tend = self.playsplines[0][-1].get_duration()
+                    p_start, _ = self.playsplines[0][-1].evaluate(tend)
+
+                    if (self.playsplines[0][-1].get_space() == 'task'):
+                        # convert p_start into keyboard frame
+                        p_start_robot = p_start
+                        p_start_world = Rotz(np.pi).T @ p_start_robot + P_BASE_WORLD
+                        p_start_kb = R_kb_world.T @ (p_start_world - delta)
+                        p_start = p_start_kb
+                else:
+                    # pull current position
+                    [p_start, _, _, _, _] = self.fbk.fkin()
+                    p_start = p_start[0:3, :]
+                    # initialize the clock
+                    self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
+
+                # step 2: get note position in robot frame
+                pd_offsets = np.array([0., 0., -0.1]).reshape([3,1]) # m
                 note_world = note_world + pd_offsets
                 note_robot = Rotz(np.pi) @ (note_world - P_BASE_WORLD)
 

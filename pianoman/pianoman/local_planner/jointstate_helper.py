@@ -23,8 +23,8 @@ class JointStateHelper:
         #     # self.joint_idx.remove(gi)
 
         # make fkin objects
-        self.chain_L = KinematicChain("base_link", "L_tip_link")
-        self.chain_R = KinematicChain("base_link", "R_tip_link")
+        self.chain_L = KinematicChain("base_link", "L_tip_link", 'L')
+        self.chain_R = KinematicChain("base_link", "R_tip_link", 'R')
 
         # placeholder variables for joint state measurements
         self.q_measured = None

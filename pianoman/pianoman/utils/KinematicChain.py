@@ -86,9 +86,9 @@ class KinematicChain:
         raise Exception(string)
 
     # Initialization.
-    def __init__(self, baseframe, tipframe):
+    def __init__(self, baseframe, tipframe, id):
         # Store the node (for the printing functions).
-        self.node = Node("kinchain")
+        self.node = Node("kinchain" + id)
 
         # Create a temporary subscriber to receive the URDF.  We use
         # the TRANSIENT_LOCAL durability, so that we see the last

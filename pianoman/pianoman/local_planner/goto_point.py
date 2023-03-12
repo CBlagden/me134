@@ -37,13 +37,14 @@ class MinimalClientAsync(Node):
         self.req.goal_left.x = pos_L[0]
         self.req.goal_left.y = pos_L[1]
         self.req.goal_left.z = pos_L[2]
+        self.req.cmd_left = True
 
         if (pos_R):
             self.req.goal_right.x = pos_R[0]
             self.req.goal_right.y = pos_R[1]
             self.req.goal_right.z = pos_R[2]
 
-            self.req.left_only = False
+            self.req.cmd_right = True
 
         self.future = self.cli.call_async(self.req)
         rclpy.spin_until_future_complete(self, self.future)

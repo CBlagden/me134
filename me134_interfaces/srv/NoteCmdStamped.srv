@@ -10,6 +10,9 @@ float64 hold_time_right 0.5 # s
 uint8 force_left 100 # relative to MIDI
 uint8 force_right 100
 
-bool left_only true
+bool cmd_left
+bool cmd_right
+
+string space "task"
 ---
 bool success false

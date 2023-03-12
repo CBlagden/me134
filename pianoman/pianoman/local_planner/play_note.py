@@ -34,16 +34,19 @@ class MinimalClientAsync(Node):
         self.req = NoteCmdStamped.Request()
 
     def send_request(self, hold_time_L, hold_time_R, note_L, note_R, force_L, force_R):
+        self.req.space = 'task'
+
         self.req.note_left = note_L
         self.req.hold_time_left = hold_time_L
         self.req.force_left = force_L
+        self.req.cmd_left = True
         
         if (note_R):
             self.req.note_right = note_R
             self.req.hold_time_right = hold_time_R
             self.req.force_right = force_R
 
-            self.req.left_only = False
+            self.req.cmd_right = True
 
         self.future = self.cli.call_async(self.req)
         rclpy.spin_until_future_complete(self, self.future)
