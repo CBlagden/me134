@@ -155,6 +155,7 @@ class LocalPlanner(Node):
                 else:
                     # joint space
                     if (curspline.get_space() == 'joint'):
+                        # WARNING: UNTESTED
                         [qd, qd_dot] = curspline.evaluate(deltat)
 
                         poscmd = list(qd.reshape([7]))
@@ -168,7 +169,7 @@ class LocalPlanner(Node):
                         # start with forward kinematics
                         [xcurr, _, _, Jv, _] = self.fbk.fkin(self.qd)
 
-                        # start with space-specific parts
+                        # perform space-specific parts
                         if (curspline.get_space() == 'task'):
                             # left arm only
                             num_arms = 1
@@ -182,9 +183,11 @@ class LocalPlanner(Node):
 
                             # both arms does not need to change Jv or xcurr
 
-                        # pull out end effector coordinates
+                        # Evaluate the splines to get desired ee coordinates
                         [xd, xd_dot] = curspline.evaluate(deltat)
-                        self.position_cmd = xd.copy().reshape([3 * num_arms,1]) # save xd for laters
+                        # Save xd for publishing pose error later
+                        self.position_cmd = xd.copy().reshape([3 * num_arms,1]) # save xd for publishing 
+                        # Reformat xd and xd_dot for kinematics
                         xd = xd.reshape([3 * num_arms,1])
                         xd_dot = xd_dot.reshape([3 * num_arms,1])
 
@@ -240,22 +243,15 @@ class LocalPlanner(Node):
                             qd_sec = lambda_s * (q_sec_goal - qd)
                             qd_sec[1, 0] = 0.0 # right pan joint stays free
                             qd_sec[4, 0] = 0.0 # left pan joint stays free
-
-                        # Add a secondary task to prevent the robot from running through the table
-                        # Quadratic cost C(q1) = k q1^2 -> dC = 2k q1 = LAM_UP * q1
-                        # LAM_UP = 1
-                        # qdot_sec = np.array([-LAM_UP * self.qd[0,0], -LAM_UP * self.qd[1,0], -LAM_UP*2 * self.qd[2,0], -LAM_UP*2 * self.qd[3,0]]).reshape([4,1])
-                        # if (num_arms == 2):
-                        #     qdot_sec = np.vstack([qdot_sec, np.array([-LAM_UP * self.qd[4,0], -LAM_UP*2 * self.qd[5,0], -LAM_UP*2 * self.qd[6,0]]).reshape([3,1])])
-
-
-                        qd_dot = Jv_pinv @ (xd_dot + LAM * ex)
-                        # Map secondary tasks to the null space
                         
+
+                        # Inverse kinematics!
+                        qd_dot = Jv_pinv @ (xd_dot + LAM * ex)
+
+                        # Map secondary tasks to the null space
                         qd_dot += (np.eye(1 + 3 * num_arms) - Jv_pinv @ np.linalg.pinv(Jv_pinv)) @ qd_sec # COMMENT OUT TO REMOVE SECONDARY TASKS
 
                         # get desired q from Euler integration with qdot
-                        
                         qd += qd_dot * dt
                         self.qd[0:(1 + 3 * num_arms)] = qd # TODO: TEST/CHECK
 
@@ -267,6 +263,7 @@ class LocalPlanner(Node):
                             poscmd = list(self.qd.reshape([7]))
                             velcmd = list(qd_dot.reshape([7]))
             else:
+                # If no spline to run, return to floating mode
                 self.state = State.FLOAT
                 
 
