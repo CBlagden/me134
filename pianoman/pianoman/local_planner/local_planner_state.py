@@ -27,7 +27,7 @@ from pianoman.utils.StateClock import StateClock
 
 from pianoman.local_planner.jointstate_helper import JointStateHelper
 
-from std_msgs.msg import Empty
+from std_msgs.msg import Empty, String
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg  import Pose
 from visualization_msgs.msg import Marker
@@ -106,6 +106,8 @@ class LocalPlanner(Node):
                 Pose, '/keyboarddetector/keyboard_point', self.cb_update_kb_pos, 10)
         self.sub_pull_kb = self.create_subscription(\
                 Empty, '/pull_keyboard', self.cb_pull_kb, 10)
+        self.sub_songcmd = self.create_subscription(
+                String, '/song_cmd', self.cb_songcmd, 10)
 
         ## Services
         self.srv_pointcmd = self.create_service(\
@@ -191,7 +193,13 @@ class LocalPlanner(Node):
                     spaceR = cursplines[0].get_space()
                 
                 # consider task space moves
-                if (spaceL == 'task' and spaceR == 'task'):
+                if (spaceL == 'task' and spaceR == 'task') or \
+                   (spaceL == 'keyboard' and spaceR == 'keyboard'):
+                    if (spaceL == 'keyboard' and spaceR == 'keyboard'):
+                        # Get the keyboard stuff
+                        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
+                        delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
+
                     # start with forward kinematics
                     [xcurr, _, _, Jv, _] = self.fbk.fkin(self.qd)
 
@@ -202,9 +210,18 @@ class LocalPlanner(Node):
                         [xd_L, xd_dot_L] = cursplines[0].evaluate(deltats[0])
                         xd_L = xd_L.reshape([3,1])
                         xd_dot_L = xd_dot_L.reshape([3,1])
+                        if (spaceL == 'keyboard'):
+                            # convert back to task space
+                            xd_L = self.kb_to_robot_frame(xd_L, R_kb_world, delta)
+                            xd_dot_L = self.kb_to_robot_frame(xd_dot_L, R_kb_world, delta)
+
                         [xd_R, xd_dot_R] = cursplines[1].evaluate(deltats[1])
                         xd_R = xd_R.reshape([3,1])
                         xd_dot_R = xd_dot_R.reshape([3,1])
+                        if (spaceL == 'keyboard'):
+                            # convert back to task space
+                            xd_R = self.kb_to_robot_frame(xd_R, R_kb_world, delta)
+                            xd_dot_R = self.kb_to_robot_frame(xd_dot_R, R_kb_world, delta)
 
                         xd = np.vstack([xd_L, xd_R])
                         xd_dot = np.vstack([xd_dot_L, xd_dot_R])
@@ -217,6 +234,11 @@ class LocalPlanner(Node):
                         [xd, xd_dot] = cursplines[0].evaluate(deltats[0])
                         xd = xd.reshape([3,1])
                         xd_dot = xd_dot.reshape([3,1])
+                        if (spaceL == 'keyboard'):
+                            # convert back to task space
+                            xd = self.kb_to_robot_frame(xd, R_kb_world, delta)
+                            xd_dot = self.kb_to_robot_frame(xd_dot, R_kb_world, delta)
+
                         qd = self.qd[0:4, :]
 
                         # remove the last three columns of Jv (they correspond to the right arm)
@@ -229,6 +251,11 @@ class LocalPlanner(Node):
                         [xd, xd_dot] = cursplines[1].evaluate(deltats[1])
                         xd = xd.reshape([3,1])
                         xd_dot = xd_dot.reshape([3,1])
+                        if (spaceR == 'keyboard'):
+                            # convert back to task space
+                            xd = self.kb_to_robot_frame(xd, R_kb_world, delta)
+                            xd_dot = self.kb_to_robot_frame(xd_dot, R_kb_world, delta)
+
                         qd = self.qd[[0,4,5,6], :]
 
                         # remove columns 1, 2, 3 of Jv (they correspond to the left arm)
@@ -240,8 +267,14 @@ class LocalPlanner(Node):
 
 
                     # Weighted pseudoinverse for singularity prevention
-                    GAM2 = 0.01
-                    Jv_pinv = np.linalg.pinv(Jv.T @ Jv + GAM2*np.eye(1 + 3*num_arms)) @ Jv.T
+                    # GAM2 = 0.01
+                    GAM2 = np.ones((1 + 3 * num_arms)) * 0.01
+                    # GAM[0] = 0.0005
+                    # GAM[1:] = 0.01
+                    # W = np.diag(GAM) # TODO: double check
+                    W = np.eye(1 + 3 * num_arms)
+                    Jv_pinv = np.linalg.pinv(W @ Jv.T @ Jv @ W + np.diag(GAM2)) @ W @ Jv.T
+                    # Jv_pinv = np.linalg.pinv(Jv.T @ Jv + GAM2*np.eye(1 + 3*num_arms)) @ Jv.T
                     # Jv_pinv = np.linalg.pinv(Jv) # UNCOMMENT TO REMOVE SINGULARITY PREVENTION
 
                     # if one of the singular values is too small, we are near a singularity
@@ -258,12 +291,12 @@ class LocalPlanner(Node):
 
                     # Secondary task to keep pan joint aligned with keyboard orientation
                     # and elbow pointing up
-                    q_sec_goal = np.zeros((1+3*num_arms, 1)) 
+                    q_sec_goal = np.zeros((1+3*num_arms, 1))
                     keyboardOrientation = np.arctan2(self.kb_rot[1, 0], self.kb_rot[0, 0])
                     
                     q_sec_goal[0, 0] = keyboardOrientation # base pan joint should track keyboard orientation
 
-                    l_base = 0.3
+                    l_base = 50.0
                     l_pan = 0.1
                     l_lower = 0.3
                     l_upper = 0.3
@@ -337,14 +370,30 @@ class LocalPlanner(Node):
             self.pos_cmd = np.array(cmdmsg.position).reshape([9,1])
             self.pos_cmd_stamp = cmdmsg.header.stamp.sec + 1e-9 * cmdmsg.header.stamp.nanosec
 
-    def cb_songcmd(self, msg, response):
+    def cb_songcmd(self, msg):
         """
             Given a message with a path to a midi file, parses the file
             and plays the accompanying song
         """
+        self.neutral_above_piano()
         filename = msg.data
-        left_traj, right_traj = midi_helper.note_trajectories(filename)
-        
+        left_traj, right_traj = midi_helper.note_trajectories(filename, bpm=120)
+        trajs = [left_traj, right_traj]
+        for i in range(len(trajs)):
+            for note, duration in trajs[i]:
+                msg = NoteCmdStamped.Request()
+                if i == 0:
+                    msg.note_left = note
+                    msg.hold_time_left = duration
+                    msg.cmd_left = True
+                else:
+                    msg.note_right = note
+                    msg.hold_time_right = duration
+                    msg.cmd_right = True
+
+                msg.space = "keyboard"
+                self.primitive_playnote(msg)
+        self.state = State.PLAY
 
 
     ## Callback functions
@@ -533,135 +582,22 @@ class LocalPlanner(Node):
         # default grippers to open
         self.grip_poscmd = [float('NaN'), float('NaN')]
 
+        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
+        delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
+
         # check the space of the message
-        if (msg.space == 'task'):
+        if (msg.space == 'task' or msg.space == 'keyboard'):
             # convert everything to task space
             # Keyboard position
-            R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
-            delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
             self.get_logger().info(f"Keyboard at {self.kb_pos}")
 
             # LEFT_NOTE
             if (msg.cmd_left):
-                note_L = msg.note_left
-                # extract location of note in keyboard frame
-                nx, ny, nz = midi_helper.note_to_position(note_L)
-                note_kb = np.array([nx, ny, nz]).reshape([3,1])
-
-                # convert to world frame
-                note_world = R_kb_world @ note_kb + delta
-
-                ## Create the trajectory to move to the note
-                # step 1: get starting robot position
-                if (self.playsplines[0]):
-                    # pull last position from last spline
-                    tend = self.playsplines[0][-1].get_duration()
-                    p_start, _ = self.playsplines[0][-1].evaluate(tend)
-                else:
-                    # pull current position
-                    [p_start, _, _, _, _] = self.fbk.fkin()
-                    p_start = p_start[0:3, :]
-                    # initialize the clock
-                    self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
-
-                # step 2: get note position in robot frame
-                pd_offsets = np.array([0., 0., -0.01]).reshape([3,1]) # m
-                note_world = note_world + pd_offsets
-                note_robot = Rotz(np.pi) @ (note_world - P_BASE_WORLD)
-
-                # step 3: define intermediate points
-                # point above the note
-                pd_abovenote = note_robot + np.array([0.0, 0.0, 0.04]).reshape([3,1]) # m
-
-                ## Generate and save splines
-                # spline to above the note
-                move_time = distance_to_movetime(p_start, pd_abovenote)
-                spline1_abovenote = Goto5(p_start, pd_abovenote, move_time, space='task')
-
-                # spline to play the note
-                move_time = 0.3 # TODO: compute based on desired force
-                spline2_tonote = Goto5(pd_abovenote, note_robot, move_time, space='task')
-
-                # hold at the note
-                hold_time = msg.hold_time_left
-                spline3_holdnote = Goto5(note_robot, note_robot, hold_time, space='task')
-
-                # move back up above the note
-                move_time = distance_to_movetime(note_robot, pd_abovenote)
-                spline4_afternote = Goto5(note_robot, pd_abovenote, move_time, space='task')
-
-                # SAVE SPLINES
-                if (self.playsplines[0] == None):
-                    self.playsplines[0] = [spline1_abovenote]
-                else:
-                    self.playsplines[0].append(spline1_abovenote)
-                self.playsplines[0].append(spline2_tonote)
-                self.playsplines[0].append(spline3_holdnote)
-                self.playsplines[0].append(spline4_afternote)
-                
-                # set the gripper to closed
-                self.grip_poscmd[0] = -0.7
+                self.primitive_playnote(msg, left=True, space=msg.space)
 
             # RIGHT_NOTE
             if (msg.cmd_right):
-                note_R = msg.note_right
-                # extract location of note in keyboard frame
-                nx, ny, nz = midi_helper.note_to_position(note_R)
-                note_kb = np.array([nx, ny, nz]).reshape([3,1])
-
-                # convert to world frame
-                note_world = R_kb_world @ note_kb + delta
-
-                ## Create the trajectory to move to the note
-                # step 1: get starting robot position
-                if (self.playsplines[1]):
-                    # pull last position from last spline
-                    tend = self.playsplines[1][-1].get_duration()
-                    p_start, _ = self.playsplines[1][-1].evaluate(tend)
-                else:
-                    # pull current position
-                    [p_start, _, _, _, _] = self.fbk.fkin()
-                    p_start = p_start[3:6, :]
-                    # initialize the clock
-                    self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
-
-                # step 2: get note position in robot frame
-                pd_offsets = np.array([0., 0., -0.02]).reshape([3,1]) # m
-                note_world = note_world + pd_offsets
-                note_robot = Rotz(np.pi) @ (note_world - P_BASE_WORLD)
-
-                # step 3: define intermediate points
-                # point above the note
-                pd_abovenote = note_robot + np.array([0.0, 0.0, 0.04]).reshape([3,1]) # m
-
-                ## Generate and save splines
-                # spline to above the note
-                move_time = distance_to_movetime(p_start, pd_abovenote)
-                spline1_abovenote = Goto5(p_start, pd_abovenote, move_time, space='task')
-
-                # spline to play the note
-                move_time = 0.3 # TODO: compute based on desired force
-                spline2_tonote = Goto5(pd_abovenote, note_robot, move_time, space='task')
-
-                # hold at the note
-                hold_time = msg.hold_time_right
-                spline3_holdnote = Goto5(note_robot, note_robot, hold_time, space='task')
-
-                # move back up above the note
-                move_time = distance_to_movetime(note_robot, pd_abovenote)
-                spline4_afternote = Goto5(note_robot, pd_abovenote, move_time, space='task')
-
-                # SAVE SPLINES
-                if (self.playsplines[1] == None):
-                    self.playsplines[1] = [spline1_abovenote]
-                else:
-                    self.playsplines[1].append(spline1_abovenote)
-                self.playsplines[1].append(spline2_tonote)
-                self.playsplines[1].append(spline3_holdnote)
-                self.playsplines[1].append(spline4_afternote)
-                
-                # set the gripper to closed
-                self.grip_poscmd[1] = -0.7
+                self.primitive_playnote(msg, left=False, space=msg.space)
     
         self.state = State.PLAY
         response.success = True
@@ -737,6 +673,217 @@ class LocalPlanner(Node):
             return tau2
 
         return [0., 0., tau1_L(t1_L, t2_L), tau2_L(t1_L, t2_L), 0., tau1_R(t1_R, t2_R), tau2_R(t1_R, t2_R)]
+    
+    def robot_to_kb_frame(self, p_robot, R_kb_world, delta):
+        p_world = Rotz(np.pi).T @ p_robot + P_BASE_WORLD
+        p_kb = R_kb_world.T @ (p_world - delta)
+        return p_kb
+    
+    def kb_to_robot_frame(self, p_kb, R_kb_world, delta):
+        p_world = R_kb_world @ (p_kb) + delta
+        p_robot = Rotz(np.pi) @ (p_world - P_BASE_WORLD)
+        return p_robot
+    
+
+    # PRIMITIVES
+    def primitive_playnote(self, msg, left=True, space='task'):
+        # PERCEPTION
+        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
+        delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
+
+        if (space == 'task'):
+
+            if (left):
+                note = msg.note_left
+                LRidx = 0
+            else:
+                note = msg.note_right
+                LRidx = 1
+
+            # extract location of note in keyboard frame
+            nx, ny, nz = midi_helper.note_to_position(note)
+            note_kb = np.array([nx, ny, nz]).reshape([3,1])
+
+            # convert to world frame
+            note_world = R_kb_world @ note_kb + delta
+
+            ## Create the trajectory to move to the note
+            # step 1: get starting robot position
+            if (self.playsplines[LRidx]):
+                # pull last position from last spline
+                tend = self.playsplines[LRidx][-1].get_duration()
+                p_start, _ = self.playsplines[LRidx][-1].evaluate(tend)
+            else:
+                # pull current position
+                [p_start, _, _, _, _] = self.fbk.fkin()
+                if (left):
+                    p_start = p_start[0:3, :]
+                    # initialize the clock
+                    self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
+                else:
+                    p_start = p_start[3:, :]
+                    # initialize the clock
+                    self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
+
+            # step 2: get note position in robot frame
+            pd_offsets = np.array([0., 0., -0.01]).reshape([3,1]) # m
+            note_world = note_world + pd_offsets
+            note_robot = Rotz(np.pi) @ (note_world - P_BASE_WORLD)
+
+            # step 3: define intermediate points
+            # point above the note
+            pd_abovenote = note_robot + np.array([0.0, 0.0, 0.04]).reshape([3,1]) # m
+
+            ## Generate and save splines
+            # spline to above the note
+            move_time = distance_to_movetime(p_start, pd_abovenote)
+            spline1_abovenote = Goto5(p_start, pd_abovenote, move_time, space='task')
+
+            # spline to play the note
+            move_time = 0.3 # TODO: compute based on desired force
+            spline2_tonote = Goto5(pd_abovenote, note_robot, move_time, space='task')
+
+            # hold at the note
+            if (left):
+                hold_time = msg.hold_time_left
+            else:
+                hold_time = msg.hold_time_right
+            spline3_holdnote = Goto5(note_robot, note_robot, hold_time, space='task')
+
+            # move back up above the note
+            move_time = distance_to_movetime(note_robot, pd_abovenote)
+            spline4_afternote = Goto5(note_robot, pd_abovenote, move_time, space='task')
+
+            # SAVE SPLINES
+            if (self.playsplines[LRidx] == None):
+                self.playsplines[LRidx] = [spline1_abovenote]
+            else:
+                self.playsplines[LRidx].append(spline1_abovenote)
+            self.playsplines[LRidx].append(spline2_tonote)
+            self.playsplines[LRidx].append(spline3_holdnote)
+            self.playsplines[LRidx].append(spline4_afternote)
+            
+            # set the gripper to closed
+            self.grip_poscmd[LRidx] = -0.7
+
+        elif (space == 'keyboard'):
+            if (left):
+                note = msg.note_left
+                LRidx = 0
+            else:
+                note = msg.note_right
+                LRidx = 1
+
+            # extract location of note in keyboard frame
+            nx, ny, nz = midi_helper.note_to_position(note)
+            note_kb = np.array([nx, ny, nz]).reshape([3,1])
+
+            ## Create the trajectory to move to the note
+            # step 1: get starting robot position in kb frame
+            if (self.playsplines[LRidx]):
+                # pull last position from last spline
+                tend = self.playsplines[LRidx][-1].get_duration()
+                p_start, _ = self.playsplines[LRidx][-1].evaluate(tend)
+
+                if (self.playsplines[LRidx][-1].get_space() == 'task'):
+                    self.get_logger().error("Tried to append a keyboard space spline to a task space spline.")
+            else:
+                # pull current position
+                [p_start, _, _, _, _] = self.fbk.fkin()
+                if (left):
+                    p_start = p_start[0:3, :]
+                    # initialize the clock
+                    self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
+                else:
+                    p_start = p_start[3:, :]
+                    # initialize the clock
+                    self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
+                # convert to kb frame
+                p_start = self.robot_to_kb_frame(p_start, R_kb_world, delta)
+
+            # step 2: get note position in robot frame
+            pd_offsets_kb = np.array([0., 0., -0.01]).reshape([3,1]) # m
+            note_kb += pd_offsets_kb
+
+            # step 3: define intermediate points
+            # point above the note
+            offset_kb = np.array([0.0, 0.0, 0.04]).reshape([3,1])
+            pd_abovenote_kb = note_kb + offset_kb # m
+
+            ## Generate and save splines
+            # spline to above the note
+            move_time = distance_to_movetime(p_start, pd_abovenote_kb)
+            spline1_abovenote = Goto5(p_start, pd_abovenote_kb, move_time, space='keyboard')
+
+            # spline to play the note
+            move_time = 0.5 # TODO: compute based on desired force
+            spline2_tonote = Goto5(pd_abovenote_kb, note_kb, move_time, space='keyboard')
+
+            # hold at the note
+            if (left):
+                hold_time = msg.hold_time_left
+            else:
+                hold_time = msg.hold_time_right
+            spline3_holdnote = Goto5(note_kb, note_kb, hold_time, space='keyboard')
+
+            # move back up above the note
+            move_time = distance_to_movetime(note_kb, pd_abovenote_kb)
+            spline4_afternote = Goto5(note_kb, pd_abovenote_kb, move_time, space='keyboard')
+
+            # SAVE SPLINES
+            if (self.playsplines[LRidx] == None):
+                self.playsplines[LRidx] = [spline1_abovenote]
+            else:
+                self.playsplines[LRidx].append(spline1_abovenote)
+            self.playsplines[LRidx].append(spline2_tonote)
+            self.playsplines[LRidx].append(spline3_holdnote)
+            self.playsplines[LRidx].append(spline4_afternote)
+            
+            # set the gripper to closed
+            self.grip_poscmd[0] = -0.7
+
+    def shrug(self):
+        pass # TODO
+
+    def neutral_above_piano(self):
+        # get keyboard position
+        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
+        delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
+
+        # chill somewhere above the piano
+        neutral_kb = [np.array([0.1, 0.0, 0.5]).reshape([3,1]), np.array([0.6, 0.0, 0.5]).reshape([3,1])]
+
+        # spline from current position
+        for LRidx in range(2):
+            if (self.playsplines[LRidx]):
+                # pull last position from last spline
+                tend = self.playsplines[LRidx][-1].get_duration()
+                p_start, _ = self.playsplines[LRidx][-1].evaluate(tend)
+
+                if (self.playsplines[LRidx][-1].get_space() == 'task'):
+                    self.get_logger().error("Tried to append a keyboard space spline to a task space spline.")
+            else:
+                # pull current position
+                [p_start, _, _, _, _] = self.fbk.fkin()
+                if (LRidx == 0):
+                    p_start = p_start[0:3, :]
+                    # initialize the clock
+                    self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
+                else:
+                    p_start = p_start[3:, :]
+                    # initialize the clock
+                    self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
+                # convert to kb frame
+                p_start = self.robot_to_kb_frame(p_start, R_kb_world, delta)
+
+            move_time = distance_to_movetime(p_start, neutral_kb[LRidx])
+            spline1 = Goto5(p_start, neutral_kb[LRidx], move_time, space='keyboard')
+            spline2 = Goto5(neutral_kb[LRidx], neutral_kb[LRidx], 5.0, space='keyboard')
+            if (self.playsplines[LRidx] == None):
+                self.playsplines[LRidx] = [spline1]
+            else:
+                self.playsplines[LRidx].append(spline1)
+            self.playsplines[LRidx].append(spline2)
 
 
 def distance_to_movetime(pstart, pend):
@@ -744,7 +891,7 @@ def distance_to_movetime(pstart, pend):
     SPEED = 0.2 # m/s
 
     dist = np.linalg.norm(pstart - pend)
-    time = max(0.2, dist / SPEED)
+    time = max(T_MIN, dist / SPEED)
     return time
 
 def main(args=None):

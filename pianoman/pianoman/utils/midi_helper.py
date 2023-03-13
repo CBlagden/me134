@@ -52,7 +52,11 @@ def _note_to_midi_value(note: str) -> int:
 
     return midi_value
 
+def _midi_value_to_note(number: int) -> tuple:
+    octave = number // len(NOTES)
+    note = NOTES[number % len(NOTES)]
 
+    return f"{note}{octave}"
 
 
 def note_to_position(note) -> NotePosition:
@@ -141,12 +145,13 @@ def _get_trajectory(track: List[Message],
          if msg.type == 'note_on':
             start_time += delta_sec
          elif msg.type == 'note_off':
-            x, y, z = note_to_position(msg.note)
-
-            end_time = start_time + delta_sec
-            trajectory.append([(start_time, end_time), (x, y, z)])
-
-            start_time = end_time
+            # x, y, z = note_to_position(msg.note)
+            note_string = _midi_value_to_note(msg.note)
+            # end_time = start_time + delta_sec
+            # trajectory.append([(start_time, end_time), (x, y, z)])
+            # trajectory.append([delta_sec, (x, y, z)])
+            trajectory.append((note_string, delta_sec))
+            # start_time = end_time
    return trajectory
 
 
@@ -156,7 +161,6 @@ if __name__ == '__main__':
     filename = '/home/robot134/songs/ode_to_joy.mid'
     left_traj, right_traj = note_trajectories(filename, bpm=120)
     print(left_traj)
-
     print(right_traj)
 
 

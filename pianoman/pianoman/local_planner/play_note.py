@@ -34,7 +34,7 @@ class MinimalClientAsync(Node):
         self.req = NoteCmdStamped.Request()
 
     def send_request(self, hold_time_L, hold_time_R, note_L, note_R, force_L, force_R):
-        self.req.space = 'task'
+        self.req.space = 'keyboard'
 
         self.req.note_left = note_L
         self.req.hold_time_left = hold_time_L

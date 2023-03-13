@@ -114,7 +114,7 @@ class KeyboardNode(Node):
             rclpy.spin_once(self)
         self.destroy_subscription(sub)
 
-        self.pub_kb_pos = self.create_publisher(Pose, name+"/keyboard_point", 3)
+        self.pub_kb_pos = self.create_publisher(Pose, name+"/keyboard_point", 30)
         self.M = None
 
         # Localize aruco markers

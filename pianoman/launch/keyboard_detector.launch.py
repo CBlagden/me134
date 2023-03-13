@@ -17,7 +17,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions                import Node
 
 
-use_depth = False
+use_depth = True
 
 #
 # Generate the Launch Description
@@ -37,8 +37,8 @@ def generate_launch_description():
         parameters = [{'video_device': '/dev/video0'},
                       {'framerate':    30.0},
                       {'pixel_format': 'yuyv'},
-                      {'image_width':  1280},
-                      {'image_height': 720},
+                      {'image_width':  800},
+                      {'image_height': 600},
                       {'camera_name':  'logitech'}])
 
 
