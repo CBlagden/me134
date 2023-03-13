@@ -197,7 +197,7 @@ class KeyboardNode(Node):
 
             if len(corner_markers) == 4:
                 bottom_lefts = [corners[3] for corners in corner_markers.values()]
-                self.get_logger().info("Four corners detected... recomputing perspective transform")
+                # self.get_logger().info("Four corners detected... recomputing perspective transform")
                 corner_markers_image_points = np.array(list(bottom_lefts)).reshape(4, 1, 2)
                 corresponding_points = POINTS[list(corner_markers.keys())]
                 corresponding_points_3D = POINTS_3D[list(corner_markers.keys())]
@@ -210,7 +210,7 @@ class KeyboardNode(Node):
 
             if self.M is not None:
                 bottom_lefts = [corners[3] for corners in markers.values()]
-                bottom_lefts_arr = np.array(bottom_lefts).reshape(len(boxes), 1, 2)
+                bottom_lefts_arr = np.array(bottom_lefts).reshape(len(bottom_lefts), 1, 2)
 
                 # we get the normalized image coordinates
                 coords_undistorted = cv2.undistortPoints(bottom_lefts_arr, self.camK, self.camD)
@@ -238,7 +238,7 @@ class KeyboardNode(Node):
                 #     else:
                 #         rot = 0
                 if len(keyboard_markers) == 2:
-                    self.get_logger().info("Two detected!")
+                    # self.get_logger().info("Two detected!")
                     marker_1, marker_2 = keyboard_markers[KEYBOARD_IDS[0]], keyboard_markers[KEYBOARD_IDS[1]]
                     marker_1_undistorted = cv2.undistortPoints(marker_1, self.camK, self.camD)[0]
                     marker_2_undistorted = cv2.undistortPoints(marker_2, self.camK, self.camD)[0]
@@ -259,7 +259,7 @@ class KeyboardNode(Node):
                 if KEYBOARD_IDS[0] in keyboard_markers.keys() and KEYBOARD_IDS[1] in keyboard_markers.keys():
                     kb_marker_idx = marker_id_to_idx[KEYBOARD_IDS[0]]
 
-                    self.get_logger().info(str("rotation (world): " + str(np.degrees(self.rot))))
+                    # self.get_logger().info(str("rotation (world): " + str(np.degrees(self.rot))))
                     point_w = list(undistorted_to_world(coords_undistorted[marker_id_to_idx[KEYBOARD_IDS[0]]], self.rvec, self.tvec, Z_OFFSET).flatten())
 
                     Rot_mat = TransformHelpers.Rotz(self.rot)
@@ -288,8 +288,8 @@ class KeyboardNode(Node):
                     x_c = point[0] / point[2]
                     y_c = point[1] / point[2]
 
-                    self.get_logger().info("solvePnP point " + str(point_w))
-                    self.get_logger().info("perspective point " + str(point))
+                    # self.get_logger().info("solvePnP point " + str(point_w))
+                    # self.get_logger().info("perspective point " + str(point))
 
                     self.pub_kb_pos.publish(pose)
 

@@ -22,7 +22,7 @@ blackKeyWidth = 0.56
 halfBlackKey = blackKeyWidth/2
 halfBtwnSpacing = btwnSpacing/2
 
-C = 0 #was previously 0.75, i don't think we need this anymore though
+C = -0.75 #was previously 0.75, i don't think we need this anymore though
 
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 noteDistance = [0.0, # C
@@ -111,10 +111,11 @@ def note_trajectories(midi_file, bpm: int) -> Tuple[TrackTrajectory, TrackTrajec
    for track in tracks:
       for msg in track:
          if msg.is_meta and msg.type == 'track_name':
-            if msg.name == 'RightHand':
+            name = msg.name.replace(' ', '')
+            if name == 'RightHand':
                right_track = track
                break
-            elif msg.name == 'LeftHand':
+            elif name == 'LeftHand':
                left_track = track
                break
 

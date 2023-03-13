@@ -8,6 +8,7 @@ from enum import Enum
 class State(Enum):
     FLOAT = 0
     PLAY = 1
+    JOINT = 2
 
     @classmethod
     def default(cls):

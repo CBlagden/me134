@@ -19,7 +19,7 @@ import sys
 
 # PARAMETERS:
 POS_L = [-0.5, -0.5, 0.5]
-MOVE_TIME = 5.0
+MOVE_TIME = 2.0
 
 class MinimalClientAsync(Node):
 

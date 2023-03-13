@@ -50,7 +50,7 @@ def generate_launch_description():
     # Profile is Width x Height x FPS.  0 is default.
     rsargs = {'camera_name':             'camera',  # camera unique name
               'depth_module.profile':    '0,0,0',   # depth W, H, FPS
-              'rgb_camera.profile':      '1280,720,30',   # color W, H, FPS
+              'rgb_camera.profile':      '960,540,30',   # color W, H, FPS
               'enable_color':            'true',    # enable color stream
               'enable_infra1':           'false',   # enable infra1 stream
               'enable_infra2':           'false',   # enable infra2 stream

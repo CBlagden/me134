@@ -84,7 +84,7 @@ class JointStateHelper:
         return [p, R_L, R_R, Jv, Jw]
 
     # message helper
-    def to_msg(self, t, q, qdot, eff, grip_q):
+    def to_msg(self, t, q, qdot, eff, grip_eff):
         # concatincate q with grip_q
         poscmd = 9 * [float("NaN")]
         velcmd = 9 * [float("NaN")]
@@ -96,9 +96,9 @@ class JointStateHelper:
             effcmd[icmd] =  eff[iq]
 
         for iq, icmd in enumerate(self.gripper_idx):
-            poscmd[icmd] = grip_q[iq]
+            poscmd[icmd] = float("NaN")
             velcmd[icmd] = float("NaN")
-            effcmd[icmd] = float("NaN")
+            effcmd[icmd] = grip_eff[iq]
 
         cmdmsg = JointState()
         cmdmsg.header.stamp = t.to_msg()
