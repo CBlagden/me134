@@ -292,6 +292,19 @@ class KeyboardNode(Node):
                     # self.get_logger().info("perspective point " + str(point))
 
                     self.pub_kb_pos.publish(pose)
+                else:
+                    pose = Pose()
+                    point = Point(x=float('nan'),
+                                  y=float('nan'),
+                                  z=float('nan'))
+                    q = Quaternion(x=float('nan'),
+                                   y=float('nan'),
+                                   z=float('nan'),
+                                   w=float('nan'))
+                    pose.position = point
+                    pose.orientation = q
+
+                    self.pub_kb_pos.publish(pose)
 
             self.pub.publish(self.bridge.cv2_to_imgmsg(frame, "rgb8"))
 #

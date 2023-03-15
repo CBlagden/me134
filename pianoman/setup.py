@@ -26,7 +26,8 @@ setup(
             "goto_point = pianoman.local_planner.goto_point:main",
             "play_note = pianoman.local_planner.play_note:main",
             "keyboard_detector = pianoman.keyboard_detector.keyboard_detector_multimarker:main",
-            "person_detector = pianoman.keyboard_detector.person_detector:main"
+            "person_detector = pianoman.keyboard_detector.person_detector:main",
+            "play_song = pianoman.utils.play_song_node:main"
         ],
     },
 )

@@ -460,7 +460,7 @@
     name="R_tip_joint"
     type="fixed">
     <origin
-      xyz="0.421 0 -0.015"
+      xyz="0.423 0 -0.015"
       rpy="0 0 0" />
     <parent
       link="R_upper_link" />

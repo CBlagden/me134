@@ -1,4 +1,5 @@
 from mido import MidiFile, Message
+import numpy as np
 
 from typing import List, Tuple, Optional
 
@@ -73,7 +74,7 @@ def note_to_position(note) -> NotePosition:
       octave = (note-36)//12 #determines which local octave we're working in
       localNote = (note - 36) % 12
 
-      x = edge2C2 + octave*octaveDist + noteDistance[localNote]
+      x = edge2C2 + octave*octaveDist + noteDistance[localNote] + 0.1 # TODO: remove?
       if localNote in [1, 3, 6, 8, 10]: #if it's a black key, adjust the y
          y = 3 + C
          z = 1.15 + 0.9605 + 0.395
@@ -123,12 +124,82 @@ def note_trajectories(midi_file, left_bpm: int,
    assert right_track is not None, 'No right track in file {}'.format(midi_file)
    assert left_track is not None, 'No left track in file {}'.format(midi_file)
 
-   left_trajectory = _get_trajectory(left_track, mid.ticks_per_beat, left_bpm, True)
-   right_trajectory = _get_trajectory(right_track, mid.ticks_per_beat, right_bpm, False)
+   left_trajectory = _get_trajectory2(left_track, mid.ticks_per_beat, left_bpm, True)
+   right_trajectory = _get_trajectory2(right_track, mid.ticks_per_beat, right_bpm, False)
    return left_trajectory, right_trajectory
 
 
-def _get_trajectory(track: List[Message],
+# def _get_trajectory(track: List[Message],
+#                     ticks_per_beat: int,
+#                     bpm: int,
+#                     isLeft) -> TrackTrajectory:
+#    """
+#       Given a MIDI track - which is just a list of MIDI messages - returns the corresponding times and positions of the notes being played.
+
+#    Args:
+#       track: A list of MIDI messages. This will always be one of the MIDI file tracks.
+#       ticks_per_beat: How many ticks are played per beat - this is defined in the midi file.
+#       bpm: The beats per minute at which the song should be played.
+#    """
+#    move_time = 0.4 + 0.3 + 0.2
+#    #move_time = 0.3
+#    trajectory = []
+#    start_time = 0.0
+#    for idx, msg in enumerate(track):
+
+#       if not msg.is_meta:
+#          #print(msg)
+#          #print("ticks:", ticks_per_beat)
+#          #print(msg.time)
+#          delta_sec = msg.time / ticks_per_beat / bpm * 60
+#          #print("delta_sec:", delta_sec)
+#          if msg.type == 'note_on':
+#             start_time += delta_sec
+#             #print(start_time)
+            
+
+#          elif msg.type == 'note_off':
+#             if isLeft:
+#                # delta_sec -= (move_time+0.05) #theoretically this is constant
+#                delta_sec -= move_time
+#             else:
+#                delta_sec -= move_time 
+
+#             if delta_sec <= 0.0: #give it a lower bound in case the note is really short
+#                delta_sec = 0.2 #make it play really short
+#                print(f"Note {idx}: not enough time to move between notes. Hand timing will not work. Try making BPM smaller.")
+
+#             # x, y, z = note_to_position(msg.note)
+#             note_string = _midi_value_to_note(msg.note)
+#             # end_time = start_time + delta_sec
+#             # trajectory.append([(start_time, end_time), (x, y, z)])
+#             # trajectory.append([delta_sec, (x, y, z)])
+#             trajectory.append((note_string, delta_sec))
+#             # start_time = end_time
+   
+#    return trajectory
+
+
+def note_dist_to_movetime(noteA, noteB, notes=True):
+   if (notes):
+      xA, yA, zA = note_to_position(noteA)
+      posA = np.array([xA, yA])
+      xB, yB, zB = note_to_position(noteB)
+      posB = np.array([xB, yB])
+   else:
+      posA = np.array(noteA[0,0], noteA[1,0])
+      posB = np.array(noteB[0,0], noteB[1,0])
+
+   dist = np.linalg.norm(posA - posB)
+
+   speed = 0.15 # m/s
+   time = dist / speed
+
+   return time
+
+
+
+def _get_trajectory2(track: List[Message],
                     ticks_per_beat: int,
                     bpm: int,
                     isLeft) -> TrackTrajectory:
@@ -140,41 +211,46 @@ def _get_trajectory(track: List[Message],
       ticks_per_beat: How many ticks are played per beat - this is defined in the midi file.
       bpm: The beats per minute at which the song should be played.
    """
-   move_time = 0.4 + 0.3 + 0.3
-   #move_time = 0.3
+   # FIRST: loop through all notes to create a list of notes to be played
+   notelist = len(track) * ['']
+   last_note_idx = 0
+   for idx, msg in enumerate(track):
+      if not msg.is_meta:
+         if (msg.type == 'note_off'):
+            notelist[idx] = _midi_value_to_note(msg.note)
+            last_note_idx = idx
+
+   # SECOND: loop through notes and adjust hold time based on distance to next note
+   fixed_move_time = 0.3 + 0.2
    trajectory = []
    start_time = 0.0
    for idx, msg in enumerate(track):
-
+      # for all other notes:
       if not msg.is_meta:
-         #print(msg)
-         #print("ticks:", ticks_per_beat)
-         #print(msg.time)
          delta_sec = msg.time / ticks_per_beat / bpm * 60
-         #print("delta_sec:", delta_sec)
          if msg.type == 'note_on':
             start_time += delta_sec
-            #print(start_time)
-            
+         
+         elif msg.type =='note_off':
+            # don't adjust the hold time of the last note
+            if (idx == last_note_idx):
+               delta_sec = msg.time / ticks_per_beat / bpm * 60
+               note_string = _midi_value_to_note(msg.note)
+               trajectory.append((note_string, delta_sec))
+               break
 
-         elif msg.type == 'note_off':
-            if isLeft:
-               # delta_sec -= (move_time+0.05) #theoretically this is constant
-               delta_sec -= move_time
-            else:
-               delta_sec -= move_time 
+            note_string = _midi_value_to_note(msg.note)
+
+            delta_sec -= fixed_move_time
+            # compute distance to next note
+            delta_sec -= note_dist_to_movetime(note_string, next(n for n in notelist[idx+1:] if n))
 
             if delta_sec <= 0.0: #give it a lower bound in case the note is really short
+               print(f"Note {idx}: delta_sec {delta_sec}")
                delta_sec = 0.2 #make it play really short
-               print(f"Note {idx}: not enough time to move between notes. Hand timing will not work. Try making BPM smaller.")
+               # print(f"Note {idx}: not enough time to move between notes. Hand timing will not work. Try making BPM smaller.")
 
-            # x, y, z = note_to_position(msg.note)
-            note_string = _midi_value_to_note(msg.note)
-            # end_time = start_time + delta_sec
-            # trajectory.append([(start_time, end_time), (x, y, z)])
-            # trajectory.append([delta_sec, (x, y, z)])
             trajectory.append((note_string, delta_sec))
-            # start_time = end_time
    
    return trajectory
 

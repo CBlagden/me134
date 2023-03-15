@@ -17,6 +17,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/JointCmdStamped.msg"
   "msg/PosCmdStamped.msg"
   "msg/PoseTwoStamped.msg"
+  "msg/SongMsg.msg"
   "srv/NoteCmdStamped.srv"
   "srv/PosCmdStamped.srv"
   DEPENDENCIES std_msgs builtin_interfaces geometry_msgs

@@ -31,11 +31,11 @@ from std_msgs.msg import Empty, String
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg  import Pose
 from visualization_msgs.msg import Marker
-from me134_interfaces.msg import PoseTwoStamped
+from me134_interfaces.msg import PoseTwoStamped, SongMsg
 from me134_interfaces.srv import NoteCmdStamped, PosCmdStamped
 
 RATE = 200.0 # Hz
-LAM = 40
+LAM = 38
 
 # P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1]) # m
 P_BASE_WORLD = np.array([-0.018 + 0.03, 0.69 + 0.01, 0.0]).reshape([3, 1]) # m\
@@ -104,7 +104,7 @@ class LocalPlanner(Node):
         self.sub_pull_kb = self.create_subscription(\
                 Empty, '/pull_keyboard', self.cb_pull_kb, 10)
         self.sub_songcmd = self.create_subscription(
-                String, '/song_cmd', self.cb_songcmd, 10)
+                SongMsg, '/song_cmd', self.cb_songcmd, 10)
 
         ## Services
         self.srv_pointcmd = self.create_service(\
@@ -299,8 +299,8 @@ class LocalPlanner(Node):
                     
                     q_sec_goal[0, 0] = keyboardOrientation # base pan joint should track keyboard orientation
 
-                    l_base = 8.0
-                    l_pan = 1.5
+                    l_base = 5.0
+                    l_pan = 1.0
                     l_lower = 0.3
                     l_upper = 0.3
 
@@ -380,11 +380,16 @@ class LocalPlanner(Node):
             Given a message with a path to a midi file, parses the file
             and plays the accompanying song
         """
+        # Throw out song commands that come while we are playing a song
+        if (self.state == State.PLAY):
+            return
+        
         self.neutral_above_piano()
-        filename = msg.data
+        filename = msg.song_name
+        bpm = msg.bpm
         left_traj, right_traj = midi_helper.note_trajectories(filename,
-                                                              left_bpm=25,
-                                                              right_bpm=25)
+                                                              left_bpm=bpm,
+                                                              right_bpm=bpm)
         trajs = [left_traj, right_traj]
         # for i in range(len(trajs)):
         for i in [0, 1]:
@@ -407,8 +412,6 @@ class LocalPlanner(Node):
                                         space="keyboard",
                                         first=is_first)
         self.state = State.PLAY
-        print(self.playsplines[0])
-        print(self.playsplines[1])
 
 
     ## Callback functions
@@ -502,6 +505,9 @@ class LocalPlanner(Node):
 
 
     def cb_update_kb_pos(self, msg: Pose):
+        if (np.isnan(msg.position.x)):
+            #TODO: ACTUALLY HANDLE THIS
+            return
         # technically z never changes but we save it just in case
         self.kb_pos = np.array([msg.position.x, msg.position.y, msg.position.z]).reshape([3,1])
         self.kb_rot = R_from_quat(np.array([msg.orientation.x,
@@ -916,7 +922,7 @@ class LocalPlanner(Node):
                 p_start = self.robot_to_kb_frame(p_start, R_kb_world, delta)
 
             # step 2: get note position in robot frame
-            pd_offsets_kb = np.array([0., 0., -0.005]).reshape([3,1]) # m
+            pd_offsets_kb = np.array([0., 0., -0.01]).reshape([3,1]) # m
             note_kb += pd_offsets_kb
 
             # step 3: define intermediate points
@@ -929,7 +935,7 @@ class LocalPlanner(Node):
             if (first):
                 move_time = 1.25
             else:
-                move_time = 0.4
+                move_time = midi_helper.note_dist_to_movetime(p_start, pd_abovenote_kb, notes=False) #0.4
             spline1_abovenote = Goto5(p_start, pd_abovenote_kb, move_time, space='keyboard')
             if (first):
                 hold_time = 0.5
@@ -948,7 +954,7 @@ class LocalPlanner(Node):
 
             # move back up above the note
             # move_time = distance_to_movetime(note_kb, pd_abovenote_kb)
-            move_time = 0.3
+            move_time = 0.2
             spline4_afternote = Goto5(note_kb, pd_abovenote_kb, move_time, space='keyboard')
 
             # SAVE SPLINES
