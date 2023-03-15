@@ -88,12 +88,6 @@ def generate_launch_description():
         executable="local_planner",
         output="screen",
     )
-    # node_localplanner = Node(
-    #     name="local_planner_3dof",
-    #     package="pianoman",
-    #     executable="local_planner_3dof",
-    #     output="screen",
-    # )
 
     ######################################################################
     # COMBINE THE ELEMENTS INTO ONE LIST

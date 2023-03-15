@@ -54,7 +54,7 @@ def generate_launch_description():
               'enable_color':            'true',    # enable color stream
               'enable_infra1':           'false',   # enable infra1 stream
               'enable_infra2':           'false',   # enable infra2 stream
-              'enable_depth':            'false',    # enable depth stream
+              'enable_depth':            'true',    # enable depth stream
               'align_depth.enable':      'false',   # enabled aligned depth
               'pointcloud.enable':       'false',   # Turn on point cloud
               'allow_no_texture_points': 'true'}    # All points without texture
@@ -66,9 +66,7 @@ def generate_launch_description():
 
     if use_depth:
         remappings = [('/image_raw', '/camera/color/image_raw'),
-                      ('/camera_info', '/camera/color/camera_info'),
-                      ('/depth_image_raw', '/camera/depth/image_raw'),
-                      ('/depth_camera_info', '/camera/depth/camera_info')]
+                      ('/camera_info', '/camera/color/camera_info')]
 
     else:
         remappings = [('/image_raw', '/usb_cam/image_raw'),

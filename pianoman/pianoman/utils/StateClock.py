@@ -33,3 +33,11 @@ class StateClock():
     def restart(self, t0, rostime=False):
         self.t0 = ros_to_float(t0, rostime)
         self.paused = False
+        
+    def restart_with_deltat(self,t0,startdelta, rostime=False):
+        self.t0 = ros_to_float(t0, rostime) - startdelta
+        self.paused = False
+
+
+    def __repr__(self):
+        return f"{self.t0}"

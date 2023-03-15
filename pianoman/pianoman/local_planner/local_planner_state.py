@@ -34,10 +34,7 @@ from visualization_msgs.msg import Marker
 from me134_interfaces.msg import PoseTwoStamped
 from me134_interfaces.srv import NoteCmdStamped, PosCmdStamped
 
-# TODO: remove, make JointCmdStamped
-from std_msgs.msg import Float64MultiArray
-
-RATE = 100.0 # Hz
+RATE = 200.0 # Hz
 LAM = 40
 
 # P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1]) # m
@@ -161,13 +158,13 @@ class LocalPlanner(Node):
             if (splinelist_R):
                 cursplines[1] = splinelist_R[0]
                 deltats[1] = self.play_clock_R.t_since_start(t, rostime=True)
-            self.get_logger().info(f"{deltats}")
+            # self.get_logger().info(f"{deltats}")
 
             # check for spline completion
             if (cursplines[0]):
                 if (cursplines[0].completed(deltats[0])):
                     # remove spline
-                    self.play_clock_L.restart(t, rostime=True)
+                    self.play_clock_L.restart_with_deltat(t, deltats[0] - cursplines[0].T, rostime=True)
                     splinelist_L.pop(0)
                     # ignore spline for this timestep (TODO: okay?)
                     cursplines[0] = None
@@ -175,7 +172,7 @@ class LocalPlanner(Node):
             if (cursplines[1]):
                 if (cursplines[1].completed(deltats[1])):
                     # remove spline
-                    self.play_clock_R.restart(t, rostime=True)
+                    self.play_clock_R.restart_with_deltat(t, deltats[1] - cursplines[1].T, rostime=True)
                     splinelist_R.pop(0)
                     # ignore spline for this timestep (TODO: okay?)
                     cursplines[1] = None
@@ -224,12 +221,13 @@ class LocalPlanner(Node):
                             # convert back to task space
                             xd_R = self.kb_to_robot_frame(xd_R, R_kb_world, delta)
                             xd_dot_R = self.kb_to_robot_frame(xd_dot_R, R_kb_world, delta)
-                            # Save xd for publishing state error
-                            self.position_cmd = xd.copy().reshape([6,1])
 
                         xd = np.vstack([xd_L, xd_R])
                         xd_dot = np.vstack([xd_dot_L, xd_dot_R])
                         qd = self.qd
+
+                        # Save xd for publishing state error
+                        self.position_cmd = xd.copy().reshape([6,1])
 
                         # does not change Jv or xcurr
                     # CASE 2: ONLY LEFT ARM HAS COMMANDS
@@ -384,9 +382,12 @@ class LocalPlanner(Node):
         """
         self.neutral_above_piano()
         filename = msg.data
-        left_traj, right_traj = midi_helper.note_trajectories(filename, bpm=98)
+        left_traj, right_traj = midi_helper.note_trajectories(filename,
+                                                              left_bpm=25,
+                                                              right_bpm=25)
         trajs = [left_traj, right_traj]
-        for i in range(len(trajs)):
+        # for i in range(len(trajs)):
+        for i in [0, 1]:
             is_left = i == 0
             for j, (note, duration) in enumerate(trajs[i]):
                 is_first = j == 0
@@ -406,6 +407,8 @@ class LocalPlanner(Node):
                                         space="keyboard",
                                         first=is_first)
         self.state = State.PLAY
+        print(self.playsplines[0])
+        print(self.playsplines[1])
 
 
     ## Callback functions
@@ -617,26 +620,124 @@ class LocalPlanner(Node):
 
 
     def cb_pull_kb(self, _):
-        nx, ny, nz = midi_helper.note_to_position('C2')
-        note_kb = np.array([nx, ny, nz]).reshape([3,1])
-
+        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
         delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
-        delta += np.array([0, 0, 0]).reshape([3,1])
-        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot # TODO: update this based on perception
-        target = R_kb_world @ note_kb + delta
 
-        self.get_logger().info('Target: %f %f %f' % (float(target[0][0]), float(target[1][0]), float(target[2][0])))
-        markermsg = create_pt_marker(*list(target.flatten()), '23rf4')
-        print("TARGET:", target)
-        self.pub_goalmarker_L.publish(markermsg)
+        center_ref_kb = np.array([*midi_helper.note_to_position("A3")]).reshape([3,1])
+        center_ref_robot = self.kb_to_robot_frame(center_ref_kb, R_kb_world, delta)
 
-        target[0] *= .8
-        target[1] *= .8
-        
-        self.get_logger().info('Target: %f %f %f' % (float(target[0][0]), float(target[1][0]), float(target[2][0])))
-        markermsg = create_pt_marker(*list(target.flatten()), self.get_clock().now().to_msg())
-        self.pub_goalmarker_L.publish(markermsg)
-        print("TARGET:", target)
+        dist =  np.sqrt(center_ref_robot[0][0] ** 2 + center_ref_robot[1][0] ** 2)
+
+        [pcur_L, _, _, _, _] = self.fbk.fkin()
+        pcur_L = pcur_L[0:3, :]
+        pcur_L = np.array(pcur_L).reshape([3,1])
+
+        pulling = False
+
+        if dist > .8:
+            self.get_logger().info("No shot brother") 
+        elif dist > .6:
+            pulling = True
+
+            pos_center_loop_kb = np.array([0.4, -.03, 0.]).reshape([3,1])
+            pos_center_loop_world = self.kb_to_robot_frame(pos_center_loop_kb, R_kb_world, delta)
+
+            target1 = np.array([pos_center_loop_world[0][0], pos_center_loop_world[1][0], .1]).reshape([3,1])
+            target2 = pos_center_loop_world
+            target3 = np.array([.6 * pos_center_loop_world[0][0], .6 * pos_center_loop_world[1][0], 0.]).reshape([3,1])
+
+            move_time = 5
+            spline1 = Goto5(pcur_L, target1, move_time, space='task')
+            spline2 = Goto5(target1, target2, 1, space='task')
+            spline3 = Goto5(target2, target3, move_time, space='task')
+            if (self.playsplines[0] == None):
+                self.playsplines[0] = [spline1]
+            else:
+                self.playsplines[0].append(spline1)
+            self.playsplines[0].append(spline2)
+            self.playsplines[0].append(spline3)
+
+            self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
+            self.grip_effcmd[0] = GRIPPER_CLOSED_EFF
+        elif dist > 0.4:
+            kb_angle = np.arctan2(self.kb_rot[1][0], self.kb_rot[0][0])
+            angle_to_kb_center = -np.arctan2(center_ref_robot[1][0], -center_ref_robot[0][0])
+
+            if kb_angle > np.deg2rad(30) + angle_to_kb_center:
+                self.get_logger().info("Pulling right")
+
+                if False: # TODO: something still wrong with this, be careful!
+                    pulling = True
+
+                    [pcur_R, _, _, _, _] = self.fbk.fkin()
+                    pcur_R = pcur_L[3:6, :]
+                    pcur_R = np.array(pcur_L).reshape([3,1])
+
+                    pos_1_R = np.array([0.8, -.03, 0.03]).reshape([3,1])
+                    pos_2_R = np.array([0.8, -.03, -0.0]).reshape([3,1])
+                    target1 = self.kb_to_robot_frame(pos_1_R, R_kb_world, delta)
+                    target2 = self.kb_to_robot_frame(pos_2_R, R_kb_world, delta)
+
+                    loop_to_center = target2 - center_ref_robot
+                    delta_angle = angle_to_kb_center - kb_angle
+                    rot_matrix = np.array([
+                            [np.cos(delta_angle), -np.sin(delta_angle), 0],
+                            [np.sin(delta_angle), np.cos(delta_angle), 0],
+                            [0., 0., 1.],
+                        ]).reshape([3,3])
+                    rotated_loop = rot_matrix @ loop_to_center
+                    target3 = center_ref_robot + rotated_loop
+                    print(pcur_R)
+                    print(target1)
+                    move_time = 5
+                    spline1 = Goto5(pcur_R, target1, 1000, space='task')
+                    spline2 = Goto5(target1, target2, 1, space='task')
+                    spline3 = Goto5(target2, target3, move_time, space='task')
+                    if (self.playsplines[1] == None):
+                        self.playsplines[1] = [spline1]
+                    else:
+                        self.playsplines[1].append(spline1)
+                    self.playsplines[1].append(spline2)
+                    self.playsplines[1].append(spline3)
+
+                    self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
+                    self.grip_effcmd[1] = GRIPPER_CLOSED_EFF
+
+            elif kb_angle < np.deg2rad(-30) + angle_to_kb_center:
+                self.get_logger().info("Pulling left")
+                pulling = True
+
+                pos_1_L = np.array([0.015, -.03, 0.03]).reshape([3,1])
+                pos_2_L = np.array([0.015, -.03, -0.0]).reshape([3,1])
+                target1 = self.kb_to_robot_frame(pos_1_L, R_kb_world, delta)
+                target2 = self.kb_to_robot_frame(pos_2_L, R_kb_world, delta)
+
+                loop_to_center = target2 - center_ref_robot
+                delta_angle = angle_to_kb_center - kb_angle
+                rot_matrix = np.array([
+                        [np.cos(delta_angle), -np.sin(delta_angle), 0],
+                        [np.sin(delta_angle), np.cos(delta_angle), 0],
+                        [0., 0., 1.],
+                    ]).reshape([3,3])
+                rotated_loop = rot_matrix @ loop_to_center
+                target3 = center_ref_robot + rotated_loop
+
+                move_time = 5
+                spline1 = Goto5(pcur_L, target1, move_time, space='task')
+                spline2 = Goto5(target1, target2, 1, space='task')
+                spline3 = Goto5(target2, target3, move_time, space='task')
+                if (self.playsplines[0] == None):
+                    self.playsplines[0] = [spline1]
+                else:
+                    self.playsplines[0].append(spline1)
+                self.playsplines[0].append(spline2)
+                self.playsplines[0].append(spline3)
+
+                self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
+                self.grip_effcmd[0] = GRIPPER_CLOSED_EFF
+
+        if pulling:
+            self.state = State.PLAY
 
 
     ## Helper functions
@@ -738,7 +839,7 @@ class LocalPlanner(Node):
                     self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
 
             # step 2: get note position in robot frame
-            pd_offsets = np.array([0., 0., -0.01]).reshape([3,1]) # m
+            pd_offsets = np.array([0., 0., -0.015]).reshape([3,1]) # m
             note_world = note_world + pd_offsets
             note_robot = Rotz(np.pi) @ (note_world - P_BASE_WORLD)
 
@@ -763,7 +864,8 @@ class LocalPlanner(Node):
             spline3_holdnote = Goto5(note_robot, note_robot, hold_time, space='task')
 
             # move back up above the note
-            move_time = distance_to_movetime(note_robot, pd_abovenote)
+            #move_time = distance_to_movetime(note_robot, pd_abovenote)
+            move_time = 0.3
             spline4_afternote = Goto5(note_robot, pd_abovenote, move_time, space='task')
 
             # SAVE SPLINES

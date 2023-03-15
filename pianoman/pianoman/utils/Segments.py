@@ -32,7 +32,7 @@
 #   The p0,pf,v0,vf,a0,af may be NumPy arrays.
 #
 import math
-
+import random
 
 #
 #  Cubic Spline Segment Objects
@@ -127,6 +127,9 @@ class Segment:
 
     def get_duration(self):
         return self.T
+    
+    def __repr__(self):
+        return f"{self.T}"
 
 class QuinticSpline(Segment):
     # Initialize.
@@ -149,6 +152,8 @@ class QuinticSpline(Segment):
 
     # Report whether the given (relative) time is past the duration.
     def completed(self, t):
+        # TIME_ERROR = 0.004
+        # stochastic_T = self.T - random.random() * TIME_ERROR
         return t >= self.T
 
 
