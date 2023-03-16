@@ -27,15 +27,15 @@ from pianoman.utils.StateClock import StateClock
 
 from pianoman.local_planner.jointstate_helper import JointStateHelper
 
-from std_msgs.msg import Empty, String
+from std_msgs.msg import Empty, Float64MultiArray
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg  import Pose
 from visualization_msgs.msg import Marker
 from me134_interfaces.msg import PoseTwoStamped, SongMsg
 from me134_interfaces.srv import NoteCmdStamped, PosCmdStamped
 
-RATE = 200.0 # Hz
-LAM = 38
+RATE = 100.0 # Hz
+LAM = 50
 
 # P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1]) # m
 P_BASE_WORLD = np.array([-0.018 + 0.03, 0.69 + 0.01, 0.0]).reshape([3, 1]) # m\
@@ -72,17 +72,24 @@ class LocalPlanner(Node):
         self.kb_pos = None
         self.kb_rot = np.eye(3)
 
+        self.prev_kb_pos = None
+        self.cur_note = None
+        self.pulling_keyboard = False
+
         q0, _, _ = self.fbk.get_joints_measured()
         self.qd = q0
 
         # general
         self.playsplines = [None, None]
+        self.pullsplines = [None, None]
+        self.jointsplines = None
         self.grip_effcmd = [GRIPPER_OPEN_EFF, GRIPPER_OPEN_EFF]
         self.counter = 0
 
         # state clocks
         self.play_clock_L = None
         self.play_clock_R = None
+        self.joint_clock = None
         # time variables
         self.tstart = None
 
@@ -105,6 +112,10 @@ class LocalPlanner(Node):
                 Empty, '/pull_keyboard', self.cb_pull_kb, 10)
         self.sub_songcmd = self.create_subscription(
                 SongMsg, '/song_cmd', self.cb_songcmd, 10)
+        self.sub_jtcmd = self.create_subscription(\
+                Float64MultiArray, '/joint_cmd', self.cb_jointcmd, 10)
+        # self.sub_pianonote = self.create_subscription(
+        #         String, '/note', self.cb_notecmd, 10)
 
         ## Services
         self.srv_pointcmd = self.create_service(\
@@ -115,33 +126,89 @@ class LocalPlanner(Node):
         ## Timers
         self.cmdtimer = self.create_timer(1 / RATE, self.cb_sendcmd)
 
+        self.kb_suddenly_moved = False
+
     # Main motor timer
     def cb_sendcmd(self):
+        kb_too_fast = False
+        if self.kb_pos is not None and self.prev_kb_pos is not None:
+            kb_delta_norm = np.linalg.norm(self.kb_pos - self.prev_kb_pos)
+            if kb_delta_norm > 0.05:
+                kb_too_fast = True
+                self.get_logger().warning(f"Delta norm: {kb_delta_norm}")
+                if (self.state == State.PLAY):
+                    self.kb_suddenly_moved = True
+
+        # get current time
+        t = self.get_clock().now()
+        dt = 1/RATE
+
         # Send commands based on the current state
         if (self.state == State.FLOAT):
+
+
             # Chill in floating mode
             poscmd = 7 * [float("NaN")]
             velcmd = 7 * [float("NaN")]
             effcmd = self.gravity()
-            self.grip_effcmd = [GRIPPER_OPEN_EFF, GRIPPER_OPEN_EFF]
 
             q, _, _ = self.fbk.get_joints_measured()
             self.qd = q
-            self.playsplines = [None, None]
-            self.jointsplines = None
+
+            # self.get_logger().info(f"sm: {self.kb_suddenly_moved}, kb: {kb_too_fast}")
+            if self.kb_suddenly_moved and not kb_too_fast:
+                self.kb_suddenly_moved = False
+                # Fkin
+                R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
+                delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
+                [p_start, _, _, _, _] = self.fbk.fkin()
+
+                self.play_clock_L.restart(t, rostime=True)
+                if self.playsplines[0]:
+                    p_startL = p_start[0:3, :]
+                    p_startL = self.robot_to_kb_frame(p_startL, R_kb_world, delta)
+
+                    # end = self.playsplines[0][0].evaluate(self.play_clock_L.paused_dt)[0] 
+                    end = self.playsplines[0][0].evaluate(0.0)[0] 
+                    end_higher = end + np.array([0.0, 0.0, 0.04]).reshape([3,1])
+                    self.playsplines[0].insert(0, Goto5(p_startL, end_higher, 2.0, space='keyboard'))
+                    self.playsplines[0].insert(1, Goto5(end_higher, end, 2.0, space='keyboard'))
+
+                self.play_clock_R.restart(t, rostime=True)
+                if self.playsplines[1]:
+                    p_startR = p_start[3:, :]
+                    p_startR = self.robot_to_kb_frame(p_startR, R_kb_world, delta)
+                    
+                    # end = self.playsplines[1][0].evaluate(self.play_clock_R.paused_dt)[0] 
+                    end = self.playsplines[1][0].evaluate(0.0)[0] 
+                    end_higher = end + np.array([0.0, 0.0, 0.04]).reshape([3,1])
+                    self.playsplines[1].insert(0, Goto5(p_startR, end_higher, 2.0, space='keyboard'))
+                    self.playsplines[1].insert(1, Goto5(end_higher, end, 2.0, space='keyboard'))
+
+                print("UPDATING STATE")
+                self.state = State.PLAY
+
+            elif not self.kb_suddenly_moved:
+                self.grip_effcmd = [GRIPPER_OPEN_EFF, GRIPPER_OPEN_EFF]
+                self.playsplines = [None, None]
+                self.jointsplines = None
 
             cmdmsg = self.fbk.to_msg(self.get_clock().now(), poscmd, velcmd, effcmd, self.grip_effcmd)
             self.pub_jtcmd.publish(cmdmsg)
 
 
-        if (self.state == State.PLAY):
-            # get current time
-            t = self.get_clock().now()
-            dt = 1/RATE
+        elif (self.state == State.PLAY):
+
+            if self.kb_suddenly_moved:
+                self.play_clock_L.pause(t, rostime=True)
+                self.play_clock_R.pause(t, rostime=True)
+                self.state = State.FLOAT
+                print("Switching to suddenly moved")
 
             # Default to floating mode
             poscmd = 7 * [float("NaN")]
             velcmd = 7 * [float("NaN")]
+            # effcmd = list(np.array(self.gravity()) / 2)
             effcmd = self.gravity()
 
             # default to no spline in L or R
@@ -282,8 +349,9 @@ class LocalPlanner(Node):
 
                     # if one of the singular values is too small, we are near a singularity
                     # and so should return back to floating mode
-                    SINGULARITY_THRESHOLD = 1e-4 # DON'T LOWER THIS IT'S SCARY!
+                    SINGULARITY_THRESHOLD = 1e-3 # DON'T LOWER THIS IT'S SCARY!
                     s = scipy.linalg.svdvals(Jv)
+                    # self.get_logger().info(f"singular values {s}")
                     if np.any(s < SINGULARITY_THRESHOLD):
                         self.state = State.FLOAT
 
@@ -351,8 +419,8 @@ class LocalPlanner(Node):
                         poscmd = list(self.qd[:4, 0].reshape([4])) + 3 * [float("NaN")]
                         velcmd = list(qd_dot.reshape([4])) + 3 * [float("NaN")]
                     elif (cursplines[1]):
-                        poscmd = 3 * [float("NaN")] + list(self.qd[[0,4,5,6], 0].reshape([4]))
-                        velcmd = 3 * [float("NaN")] + list(qd_dot.reshape([4]))
+                        poscmd = [self.qd[0, 0]] + 3 * [float("NaN")] + list(self.qd[[4,5,6], 0].reshape([3]))
+                        velcmd = [ qd_dot[0, 0]] + 3 * [float("NaN")] + list(qd_dot.reshape([4]))
 
                 self.counter = 0
             else:
@@ -360,6 +428,7 @@ class LocalPlanner(Node):
                 if (self.counter > 4):
                     # If no spline to run, return to floating mode
                     self.state = State.FLOAT
+                    print("Counter triggered. Switching to float.")
                     self.counter = 0
                 
 
@@ -375,6 +444,41 @@ class LocalPlanner(Node):
             self.pos_cmd = np.array(cmdmsg.position).reshape([9,1])
             self.pos_cmd_stamp = cmdmsg.header.stamp.sec + 1e-9 * cmdmsg.header.stamp.nanosec
 
+        elif (self.state == State.JOINT):
+            # get current time
+            t = self.get_clock().now()
+            dt = 1/RATE
+
+            # Default to floating mode
+            poscmd = 7 * [float("NaN")]
+            velcmd = 7 * [float("NaN")]
+            effcmd = self.gravity()
+
+            if (self.jointsplines):
+                curspline = self.jointsplines[0]
+                deltat = self.joint_clock.t_since_start(t, rostime=True)
+
+                if (curspline.completed(deltat)):
+                    # remove spline
+                    self.joint_clock.restart(t, rostime=True)
+                    self.jointsplines.pop(0)
+                else:
+                    [qd, qd_dot] = curspline.evaluate(deltat)
+
+                    poscmd = list(qd.reshape([7]))
+                    velcmd = list(qd_dot.reshape([7]))
+
+                    q, _, _ = self.fbk.get_joints_measured()
+                    self.qd = q
+
+                cmdmsg = self.fbk.to_msg(self.get_clock().now(), poscmd, velcmd, effcmd, self.grip_effcmd)
+                # save effort command and stamp
+                self.eff_cmd = np.array(cmdmsg.effort).reshape([9,1])
+                self.eff_cmd_stamp = cmdmsg.header.stamp.sec + 1e-9 * cmdmsg.header.stamp.nanosec
+                self.pub_jtcmd.publish(cmdmsg)
+            else:
+                self.state = State.FLOAT
+
     def cb_songcmd(self, msg):
         """
             Given a message with a path to a midi file, parses the file
@@ -383,7 +487,23 @@ class LocalPlanner(Node):
         # Throw out song commands that come while we are playing a song
         if (self.state == State.PLAY):
             return
-        
+
+        is_simon_mode = msg.simon_mode
+
+        def _construct_msg(note, duration, is_left):
+            msg = NoteCmdStamped.Request()
+            if is_left:
+                msg.note_left = note
+                msg.hold_time_left = duration
+                msg.cmd_left = True
+            else:
+                msg.note_right = note
+                msg.hold_time_right = duration
+                msg.cmd_right = True
+
+            msg.space = "keyboard"
+            return msg
+
         self.neutral_above_piano()
         filename = msg.song_name
         bpm = msg.bpm
@@ -391,28 +511,19 @@ class LocalPlanner(Node):
                                                               left_bpm=bpm,
                                                               right_bpm=bpm)
         trajs = [left_traj, right_traj]
-        # for i in range(len(trajs)):
-        for i in [0, 1]:
+        for i in range(len(trajs)):
             is_left = i == 0
             for j, (note, duration) in enumerate(trajs[i]):
                 is_first = j == 0
-                msg = NoteCmdStamped.Request()
-                if is_left:
-                    msg.note_left = note
-                    msg.hold_time_left = duration
-                    msg.cmd_left = True
-                else:
-                    msg.note_right = note
-                    msg.hold_time_right = duration
-                    msg.cmd_right = True
-
-                msg.space = "keyboard"
+                msg = _construct_msg(note, duration, is_left)
                 self.primitive_playnote(msg,
                                         left=is_left,
                                         space="keyboard",
                                         first=is_first)
         self.state = State.PLAY
 
+    def cb_notecmd(self, msg):
+        self.cur_note = msg.data
 
     ## Callback functions
     # callback for /joint_states
@@ -459,7 +570,7 @@ class LocalPlanner(Node):
         # first check how old effort command is
         t_cur = self.get_clock().now().nanoseconds * 1e-9
         timeout_sec = 0.5 # s
-        EFFTHRESH = 2.5 # Nm
+        EFFTHRESH = 4.0 # Nm
 
         eff_measured = np.array(msg.effort).reshape([9,1])
         if (t_cur - self.eff_cmd_stamp > timeout_sec): 
@@ -475,9 +586,9 @@ class LocalPlanner(Node):
             # check for a state change
             # TODO: INCLUDE GRIPPER
             if (sum(abs(effdiff) > EFFTHRESH) > 0):
-                if (self.state != State.FLOAT):
+                if (self.state != State.FLOAT and not self.pulling_keyboard):
                     self.get_logger().info("Hit something! Returning to float mode.")
-                    self.state = State.FLOAT
+                    self.state = State.FLOAT # TODO: FIX
 
         # # In all states, check if position is far from command
         # # first check how old position command is
@@ -508,12 +619,36 @@ class LocalPlanner(Node):
         if (np.isnan(msg.position.x)):
             #TODO: ACTUALLY HANDLE THIS
             return
+
+        self.prev_kb_pos = self.kb_pos
         # technically z never changes but we save it just in case
         self.kb_pos = np.array([msg.position.x, msg.position.y, msg.position.z]).reshape([3,1])
         self.kb_rot = R_from_quat(np.array([msg.orientation.x,
                                             msg.orientation.y,
                                             msg.orientation.z,
                                             msg.orientation.w])).reshape((3, 3))
+        
+    # callback for /joint_cmd
+    def cb_jointcmd(self, msg: Float64MultiArray):
+        #
+        self.get_logger().info("Got joint command: {}".format(msg.data))
+
+        # reset spline list
+        self.jointsplines = []
+        # Use this to initiate/reset splines between cartesian positions
+        qd_final = list(msg.data)
+        qcur = self.fbk.get_joints_measured()[0]
+
+        qd_final = np.array(qd_final).reshape([7,1])
+        qcur = np.array(qcur).reshape([7,1])
+
+        move_time = 10.0
+        self.jointsplines.append(Goto5(qcur, qd_final, move_time, space='joint'))
+        # self.cursplines.append(Hold(pd_final, move_time, space='task'))
+        self.jointsplines.append(Stay(qd_final, space='joint'))
+        self.joint_clock = StateClock(self.get_clock().now(), rostime=True)
+
+        self.state = State.JOINT
 
     # callback for /point_cmd
     def cb_pointcmd(self, msg, response):
@@ -622,6 +757,7 @@ class LocalPlanner(Node):
     
         self.state = State.PLAY
         response.success = True
+        print(self.playsplines)
         return response
 
 
@@ -644,8 +780,9 @@ class LocalPlanner(Node):
             self.get_logger().info("No shot brother") 
         elif dist > .6:
             pulling = True
+            self.pulling_keyboard = pulling
 
-            pos_center_loop_kb = np.array([0.4, -.03, 0.]).reshape([3,1])
+            pos_center_loop_kb = np.array([0.39, -.03, -0.03]).reshape([3,1])
             pos_center_loop_world = self.kb_to_robot_frame(pos_center_loop_kb, R_kb_world, delta)
 
             target1 = np.array([pos_center_loop_world[0][0], pos_center_loop_world[1][0], .1]).reshape([3,1])
@@ -665,7 +802,7 @@ class LocalPlanner(Node):
 
             self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
             self.grip_effcmd[0] = GRIPPER_CLOSED_EFF
-        elif dist > 0.4:
+        elif dist > 0.4 or True:
             kb_angle = np.arctan2(self.kb_rot[1][0], self.kb_rot[0][0])
             angle_to_kb_center = -np.arctan2(center_ref_robot[1][0], -center_ref_robot[0][0])
 
@@ -709,7 +846,7 @@ class LocalPlanner(Node):
                     self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
                     self.grip_effcmd[1] = GRIPPER_CLOSED_EFF
 
-            elif kb_angle < np.deg2rad(-30) + angle_to_kb_center:
+            elif kb_angle < np.deg2rad(-30) + angle_to_kb_center or True:
                 self.get_logger().info("Pulling left")
                 pulling = True
 
@@ -1032,9 +1169,6 @@ class LocalPlanner(Node):
         
         # set the gripper to closed
         self.grip_effcmd[LRidx] = GRIPPER_CLOSED_EFF
-
-    def shrug(self):
-        pass # TODO
 
     def neutral_above_piano(self):
         # get keyboard position

@@ -24,19 +24,22 @@ halfBlackKey = blackKeyWidth/2
 halfBtwnSpacing = btwnSpacing/2
 
 C = -0.75 #was previously 0.75, i don't think we need this anymore though
+offset = 0
+offset2 = 0
+offset3 = 0
 
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 noteDistance = [0.0, # C
-               0.0 + halfKey + 0.1775 - halfBlackKey, # C#
+               0.0 + halfKey + 0.1775 - halfBlackKey - offset, # C#
                keyWidth + btwnSpacing, # D
-               keyWidth + btwnSpacing + halfKey + halfBtwnSpacing + 0.3625 - halfBlackKey, # D#
+               keyWidth + btwnSpacing + halfKey + halfBtwnSpacing + 0.3625 - halfBlackKey - offset, # D#
                (keyWidth + btwnSpacing)*2, # E
                (keyWidth + btwnSpacing)*3, # F
-               (keyWidth + btwnSpacing)*3 + halfKey + halfBtwnSpacing + 0.1305 - halfBlackKey, # F#
+               (keyWidth + btwnSpacing)*3 + halfKey + halfBtwnSpacing + 0.1305 - halfBlackKey - offset, # F#
                (keyWidth + btwnSpacing)*4, # G
-               (keyWidth + btwnSpacing)*4 + halfKey + halfBtwnSpacing + 0.275 - halfBlackKey, # G#
+               (keyWidth + btwnSpacing)*4 + halfKey + halfBtwnSpacing + 0.275 - halfBlackKey - offset, # G#
                (keyWidth + btwnSpacing)*5, # A
-               (keyWidth + btwnSpacing)*5 + halfKey + halfBtwnSpacing + 0.3770 - halfBlackKey, # A#
+               (keyWidth + btwnSpacing)*5 + halfKey + halfBtwnSpacing + 0.3770 - halfBlackKey - offset, # A#
                (keyWidth + btwnSpacing)*6] # B #note distances in a local frame 
 
 octaveDist = (keyWidth + btwnSpacing)*7
@@ -74,13 +77,13 @@ def note_to_position(note) -> NotePosition:
       octave = (note-36)//12 #determines which local octave we're working in
       localNote = (note - 36) % 12
 
-      x = edge2C2 + octave*octaveDist + noteDistance[localNote] + 0.1 # TODO: remove?
+      x = edge2C2 + octave*octaveDist + noteDistance[localNote] #- 0.3 # TODO: remove?
       if localNote in [1, 3, 6, 8, 10]: #if it's a black key, adjust the y
          y = 3 + C
-         z = 1.15 + 0.9605 + 0.395
+         z = 1.15 + 0.9605 + 0.395 + offset2
       else: #note is a white key
          y = 1.25 + C#(ALSO IN INCHES I'M SORRY)
-         z = 1.15 + 0.9605
+         z = 1.15 + 0.9605 + offset3
    else:
       print("not a valid note, double check octave settings")
       #play C instead
@@ -183,12 +186,12 @@ def note_trajectories(midi_file, left_bpm: int,
 def note_dist_to_movetime(noteA, noteB, notes=True):
    if (notes):
       xA, yA, zA = note_to_position(noteA)
-      posA = np.array([xA, yA])
+      posA = np.array([xA, yA, zA])
       xB, yB, zB = note_to_position(noteB)
-      posB = np.array([xB, yB])
+      posB = np.array([xB, yB, zB])
    else:
-      posA = np.array(noteA[0,0], noteA[1,0])
-      posB = np.array(noteB[0,0], noteB[1,0])
+      posA = np.array([noteA[0,0], noteA[1,0], noteA[2,0]])
+      posB = np.array([noteB[0,0], noteB[1,0], noteB[2,0]])
 
    dist = np.linalg.norm(posA - posB)
 
@@ -246,7 +249,8 @@ def _get_trajectory2(track: List[Message],
             delta_sec -= note_dist_to_movetime(note_string, next(n for n in notelist[idx+1:] if n))
 
             if delta_sec <= 0.0: #give it a lower bound in case the note is really short
-               print(f"Note {idx}: delta_sec {delta_sec}")
+               print(f"Note {idx}, {note_string}, {isLeft}: delta_sec {delta_sec}")
+               print("ohno")
                delta_sec = 0.2 #make it play really short
                # print(f"Note {idx}: not enough time to move between notes. Hand timing will not work. Try making BPM smaller.")
 
@@ -258,10 +262,10 @@ def _get_trajectory2(track: List[Message],
 
 
 if __name__ == '__main__':
-   filename = '/home/robot134/songs/ode_to_joy.mid'
-   left_traj, right_traj = note_trajectories(filename, left_bpm=15, right_bpm=15)
-   #print(left_traj)
-   print(right_traj)
+   filename = '/home/robot134/songs/amazingGrace.mid'
+   left_traj, right_traj = note_trajectories(filename, left_bpm=30, right_bpm=30)
+   print(left_traj)
+   #print(right_traj)
 
 
 

@@ -17,6 +17,7 @@ from rclpy.node import Node
 
 import scipy.linalg
 import numpy as np
+import copy
 
 from pianoman.local_planner.states import State
 from pianoman.utils.rviz_helper import create_pt_marker
@@ -27,23 +28,20 @@ from pianoman.utils.StateClock import StateClock
 
 from pianoman.local_planner.jointstate_helper import JointStateHelper
 
-from std_msgs.msg import Empty, String
+from std_msgs.msg import Empty, Float64MultiArray
 from sensor_msgs.msg    import JointState
 from geometry_msgs.msg  import Pose
 from visualization_msgs.msg import Marker
-from me134_interfaces.msg import PoseTwoStamped
+from me134_interfaces.msg import PoseTwoStamped, SongMsg
 from me134_interfaces.srv import NoteCmdStamped, PosCmdStamped
 
-# TODO: remove, make JointCmdStamped
-from std_msgs.msg import Float64MultiArray
-
-RATE = 100.0 # Hz
-LAM = 18*2
+RATE = 200.0 # Hz
+LAM = 38
 
 # P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1]) # m
 P_BASE_WORLD = np.array([-0.018 + 0.03, 0.69 + 0.01, 0.0]).reshape([3, 1]) # m\
 GRIPPER_OPEN_EFF = 1.0
-GRIPPER_CLOSED_EFF = -2.0
+GRIPPER_CLOSED_EFF = -2.5
 
 L_IDX = [0, 6, 7, 8]
 R_IDX = [0, 2, 3, 4]
@@ -109,7 +107,9 @@ class LocalPlanner(Node):
         self.sub_pull_kb = self.create_subscription(\
                 Empty, '/pull_keyboard', self.cb_pull_kb, 10)
         self.sub_songcmd = self.create_subscription(
-                String, '/song_cmd', self.cb_songcmd, 10)
+                SongMsg, '/song_cmd', self.cb_songcmd, 10)
+        self.sub_jtcmd = self.create_subscription(\
+                Float64MultiArray, '/joint_cmd', self.cb_jointcmd, 10)
 
         ## Services
         self.srv_pointcmd = self.create_service(\
@@ -133,6 +133,7 @@ class LocalPlanner(Node):
             q, _, _ = self.fbk.get_joints_measured()
             self.qd = q
             self.playsplines = [None, None]
+            self.jointsplines = None
 
             cmdmsg = self.fbk.to_msg(self.get_clock().now(), poscmd, velcmd, effcmd, self.grip_effcmd)
             self.pub_jtcmd.publish(cmdmsg)
@@ -162,12 +163,13 @@ class LocalPlanner(Node):
             if (splinelist_R):
                 cursplines[1] = splinelist_R[0]
                 deltats[1] = self.play_clock_R.t_since_start(t, rostime=True)
+            # self.get_logger().info(f"{deltats}")
 
             # check for spline completion
             if (cursplines[0]):
                 if (cursplines[0].completed(deltats[0])):
                     # remove spline
-                    self.play_clock_L.restart(t, rostime=True)
+                    self.play_clock_L.restart_with_deltat(t, deltats[0] - cursplines[0].T, rostime=True)
                     splinelist_L.pop(0)
                     # ignore spline for this timestep (TODO: okay?)
                     cursplines[0] = None
@@ -175,7 +177,7 @@ class LocalPlanner(Node):
             if (cursplines[1]):
                 if (cursplines[1].completed(deltats[1])):
                     # remove spline
-                    self.play_clock_R.restart(t, rostime=True)
+                    self.play_clock_R.restart_with_deltat(t, deltats[1] - cursplines[1].T, rostime=True)
                     splinelist_R.pop(0)
                     # ignore spline for this timestep (TODO: okay?)
                     cursplines[1] = None
@@ -229,6 +231,9 @@ class LocalPlanner(Node):
                         xd_dot = np.vstack([xd_dot_L, xd_dot_R])
                         qd = self.qd
 
+                        # Save xd for publishing state error
+                        self.position_cmd = xd.copy().reshape([6,1])
+
                         # does not change Jv or xcurr
                     # CASE 2: ONLY LEFT ARM HAS COMMANDS
                     elif (cursplines[0]):
@@ -240,6 +245,8 @@ class LocalPlanner(Node):
                             # convert back to task space
                             xd = self.kb_to_robot_frame(xd, R_kb_world, delta)
                             xd_dot = self.kb_to_robot_frame(xd_dot, R_kb_world, delta)
+                            # Save xd for publishing state error
+                            self.position_cmd = np.vstack([xd.copy().reshape([3,1]), np.zeros([3,1])])
 
                         qd = self.qd[0:4, :]
 
@@ -257,15 +264,14 @@ class LocalPlanner(Node):
                             # convert back to task space
                             xd = self.kb_to_robot_frame(xd, R_kb_world, delta)
                             xd_dot = self.kb_to_robot_frame(xd_dot, R_kb_world, delta)
+                            # Save xd for publishing state error
+                            self.position_cmd = np.vstack([np.zeros([3,1]), xd.copy().reshape([3,1])])
 
                         qd = self.qd[[0,4,5,6], :]
 
                         # remove columns 1, 2, 3 of Jv (they correspond to the left arm)
                         Jv = Jv[3:6, [0, 4, 5, 6]]
                         xcurr = xcurr[3:6,:]  # pull out right arm positions
-
-                    # Save xd for publishing state error
-                    self.position_cmd = xd.copy().reshape([3 * num_arms,1])
 
 
                     # Weighted pseudoinverse for singularity prevention
@@ -298,8 +304,8 @@ class LocalPlanner(Node):
                     
                     q_sec_goal[0, 0] = keyboardOrientation # base pan joint should track keyboard orientation
 
-                    l_base = 10.0
-                    l_pan = 2.0
+                    l_base = 5.0
+                    l_pan = 1.0
                     l_lower = 0.3
                     l_upper = 0.3
 
@@ -352,6 +358,8 @@ class LocalPlanner(Node):
                     elif (cursplines[1]):
                         poscmd = 3 * [float("NaN")] + list(self.qd[[0,4,5,6], 0].reshape([4]))
                         velcmd = 3 * [float("NaN")] + list(qd_dot.reshape([4]))
+
+                self.counter = 0
             else:
                 self.counter += 1
                 if (self.counter > 4):
@@ -400,33 +408,56 @@ class LocalPlanner(Node):
                     self.qd = q
 
                 cmdmsg = self.fbk.to_msg(self.get_clock().now(), poscmd, velcmd, effcmd, self.grip_effcmd)
+                # save effort command and stamp
+                self.eff_cmd = np.array(cmdmsg.effort).reshape([9,1])
+                self.eff_cmd_stamp = cmdmsg.header.stamp.sec + 1e-9 * cmdmsg.header.stamp.nanosec
                 self.pub_jtcmd.publish(cmdmsg)
             else:
                 self.state = State.FLOAT
 
-    def cb_songcmd(self, msg):
+    def cb_songcmd(self, msg, notes = None):
         """
             Given a message with a path to a midi file, parses the file
             and plays the accompanying song
         """
-        self.neutral_above_piano()
-        filename = msg.data
-        left_traj, right_traj = midi_helper.note_trajectories(filename, bpm=120)
-        trajs = [left_traj, right_traj]
-        for i in range(len(trajs)):
-            for note, duration in trajs[i]:
-                msg = NoteCmdStamped.Request()
-                if i == 0:
-                    msg.note_left = note
-                    msg.hold_time_left = duration
-                    msg.cmd_left = True
-                else:
-                    msg.note_right = note
-                    msg.hold_time_right = duration
-                    msg.cmd_right = True
+        # Throw out song commands that come while we are playing a song
+        if (self.state == State.PLAY):
+            return
 
-                msg.space = "keyboard"
-                self.primitive_playnote(msg)
+        def _construct_msg(note, duration, is_left):
+            msg = NoteCmdStamped.Request()
+            if is_left:
+                msg.note_left = note
+                msg.hold_time_left = duration
+                msg.cmd_left = True
+            else:
+                msg.note_right = note
+                msg.hold_time_right = duration
+                msg.cmd_right = True
+
+            msg.space = "keyboard"
+            return msg
+
+        self.neutral_above_piano()
+        filename = msg.song_name
+        bpm = msg.bpm
+        left_traj, right_traj = midi_helper.note_trajectories(filename,
+                                                              left_bpm=bpm,
+                                                              right_bpm=bpm)
+        if (notes is not None):
+            trajs = trajs[left_traj]
+        else:
+            trajs = [left_traj, right_traj]
+        
+        for i in range(len(trajs)):
+            is_left = i == 0
+            for j, (note, duration) in enumerate(trajs[i]):
+                is_first = j == 0
+                msg = _construct_msg(note, duration, is_left)
+                self.primitive_playnote(msg,
+                                        left=is_left,
+                                        space="keyboard",
+                                        first=is_first)
         self.state = State.PLAY
 
 
@@ -521,6 +552,9 @@ class LocalPlanner(Node):
 
 
     def cb_update_kb_pos(self, msg: Pose):
+        if (np.isnan(msg.position.x)):
+            #TODO: ACTUALLY HANDLE THIS
+            return
         # technically z never changes but we save it just in case
         self.kb_pos = np.array([msg.position.x, msg.position.y, msg.position.z]).reshape([3,1])
         self.kb_rot = R_from_quat(np.array([msg.orientation.x,
@@ -528,7 +562,6 @@ class LocalPlanner(Node):
                                             msg.orientation.z,
                                             msg.orientation.w])).reshape((3, 3))
         
-    
     # callback for /joint_cmd
     def cb_jointcmd(self, msg: Float64MultiArray):
         #
@@ -548,6 +581,8 @@ class LocalPlanner(Node):
         # self.cursplines.append(Hold(pd_final, move_time, space='task'))
         self.jointsplines.append(Stay(qd_final, space='joint'))
         self.joint_clock = StateClock(self.get_clock().now(), rostime=True)
+
+        self.state = State.JOINT
 
     # callback for /point_cmd
     def cb_pointcmd(self, msg, response):
@@ -637,9 +672,6 @@ class LocalPlanner(Node):
         # default grippers to open
         self.grip_effcmd = [float('NaN'), float('NaN')]
 
-        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
-        delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
-
         # check the space of the message
         if (msg.space == 'task' or msg.space == 'keyboard'):
             # convert everything to task space
@@ -660,29 +692,137 @@ class LocalPlanner(Node):
         self.state = State.PLAY
         response.success = True
         return response
+    
 
+    def cb_teach(self, msg):
+        """
+            Given a message with a path to a midi file, parses the file
+            and TEACHES the accompanying song
+        """
+        # only play the first three notes
+        self.cb_songcmd(msg, notes=3)
+        self.
+        self.teach = True
 
     def cb_pull_kb(self, _):
-        nx, ny, nz = midi_helper.note_to_position('C2')
-        note_kb = np.array([nx, ny, nz]).reshape([3,1])
-
+        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
         delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
-        delta += np.array([0, 0, 0]).reshape([3,1])
-        R_kb_world = Rotz(-np.pi/2) @ self.kb_rot # TODO: update this based on perception
-        target = R_kb_world @ note_kb + delta
 
-        self.get_logger().info('Target: %f %f %f' % (float(target[0][0]), float(target[1][0]), float(target[2][0])))
-        markermsg = create_pt_marker(*list(target.flatten()), '23rf4')
-        print("TARGET:", target)
-        self.pub_goalmarker_L.publish(markermsg)
+        center_ref_kb = np.array([*midi_helper.note_to_position("A3")]).reshape([3,1])
+        center_ref_robot = self.kb_to_robot_frame(center_ref_kb, R_kb_world, delta)
 
-        target[0] *= .8
-        target[1] *= .8
-        
-        self.get_logger().info('Target: %f %f %f' % (float(target[0][0]), float(target[1][0]), float(target[2][0])))
-        markermsg = create_pt_marker(*list(target.flatten()), self.get_clock().now().to_msg())
-        self.pub_goalmarker_L.publish(markermsg)
-        print("TARGET:", target)
+        dist =  np.sqrt(center_ref_robot[0][0] ** 2 + center_ref_robot[1][0] ** 2)
+
+        [pcur_L, _, _, _, _] = self.fbk.fkin()
+        pcur_L = pcur_L[0:3, :]
+        pcur_L = np.array(pcur_L).reshape([3,1])
+
+        pulling = False
+
+        if dist > .8:
+            self.get_logger().info("No shot brother") 
+        elif dist > .6:
+            pulling = True
+
+            pos_center_loop_kb = np.array([0.4, -.03, 0.]).reshape([3,1])
+            pos_center_loop_world = self.kb_to_robot_frame(pos_center_loop_kb, R_kb_world, delta)
+
+            target1 = np.array([pos_center_loop_world[0][0], pos_center_loop_world[1][0], .1]).reshape([3,1])
+            target2 = pos_center_loop_world
+            target3 = np.array([.6 * pos_center_loop_world[0][0], .6 * pos_center_loop_world[1][0], 0.]).reshape([3,1])
+
+            move_time = 5
+            spline1 = Goto5(pcur_L, target1, move_time, space='task')
+            spline2 = Goto5(target1, target2, 1, space='task')
+            spline3 = Goto5(target2, target3, move_time, space='task')
+            if (self.playsplines[0] == None):
+                self.playsplines[0] = [spline1]
+            else:
+                self.playsplines[0].append(spline1)
+            self.playsplines[0].append(spline2)
+            self.playsplines[0].append(spline3)
+
+            self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
+            self.grip_effcmd[0] = GRIPPER_CLOSED_EFF
+        elif dist > 0.4:
+            kb_angle = np.arctan2(self.kb_rot[1][0], self.kb_rot[0][0])
+            angle_to_kb_center = -np.arctan2(center_ref_robot[1][0], -center_ref_robot[0][0])
+
+            if kb_angle > np.deg2rad(30) + angle_to_kb_center:
+                self.get_logger().info("Pulling right")
+
+                if False: # TODO: something still wrong with this, be careful!
+                    pulling = True
+
+                    [pcur_R, _, _, _, _] = self.fbk.fkin()
+                    pcur_R = pcur_L[3:6, :]
+                    pcur_R = np.array(pcur_L).reshape([3,1])
+
+                    pos_1_R = np.array([0.8, -.03, 0.03]).reshape([3,1])
+                    pos_2_R = np.array([0.8, -.03, -0.0]).reshape([3,1])
+                    target1 = self.kb_to_robot_frame(pos_1_R, R_kb_world, delta)
+                    target2 = self.kb_to_robot_frame(pos_2_R, R_kb_world, delta)
+
+                    loop_to_center = target2 - center_ref_robot
+                    delta_angle = angle_to_kb_center - kb_angle
+                    rot_matrix = np.array([
+                            [np.cos(delta_angle), -np.sin(delta_angle), 0],
+                            [np.sin(delta_angle), np.cos(delta_angle), 0],
+                            [0., 0., 1.],
+                        ]).reshape([3,3])
+                    rotated_loop = rot_matrix @ loop_to_center
+                    target3 = center_ref_robot + rotated_loop
+                    print(pcur_R)
+                    print(target1)
+                    move_time = 5
+                    spline1 = Goto5(pcur_R, target1, 1000, space='task')
+                    spline2 = Goto5(target1, target2, 1, space='task')
+                    spline3 = Goto5(target2, target3, move_time, space='task')
+                    if (self.playsplines[1] == None):
+                        self.playsplines[1] = [spline1]
+                    else:
+                        self.playsplines[1].append(spline1)
+                    self.playsplines[1].append(spline2)
+                    self.playsplines[1].append(spline3)
+
+                    self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
+                    self.grip_effcmd[1] = GRIPPER_CLOSED_EFF
+
+            elif kb_angle < np.deg2rad(-30) + angle_to_kb_center:
+                self.get_logger().info("Pulling left")
+                pulling = True
+
+                pos_1_L = np.array([0.015, -.03, 0.03]).reshape([3,1])
+                pos_2_L = np.array([0.015, -.03, -0.0]).reshape([3,1])
+                target1 = self.kb_to_robot_frame(pos_1_L, R_kb_world, delta)
+                target2 = self.kb_to_robot_frame(pos_2_L, R_kb_world, delta)
+
+                loop_to_center = target2 - center_ref_robot
+                delta_angle = angle_to_kb_center - kb_angle
+                rot_matrix = np.array([
+                        [np.cos(delta_angle), -np.sin(delta_angle), 0],
+                        [np.sin(delta_angle), np.cos(delta_angle), 0],
+                        [0., 0., 1.],
+                    ]).reshape([3,3])
+                rotated_loop = rot_matrix @ loop_to_center
+                target3 = center_ref_robot + rotated_loop
+
+                move_time = 5
+                spline1 = Goto5(pcur_L, target1, move_time, space='task')
+                spline2 = Goto5(target1, target2, 1, space='task')
+                spline3 = Goto5(target2, target3, move_time, space='task')
+                if (self.playsplines[0] == None):
+                    self.playsplines[0] = [spline1]
+                else:
+                    self.playsplines[0].append(spline1)
+                self.playsplines[0].append(spline2)
+                self.playsplines[0].append(spline3)
+
+                self.play_clock_L = StateClock(self.get_clock().now(), rostime=True)
+                self.grip_effcmd[0] = GRIPPER_CLOSED_EFF
+
+        if pulling:
+            self.state = State.PLAY
 
 
     ## Helper functions
@@ -744,7 +884,7 @@ class LocalPlanner(Node):
     
 
     # PRIMITIVES
-    def primitive_playnote(self, msg, left=True, space='task'):
+    def primitive_playnote(self, msg, left=True, space='task', first=False):
         # PERCEPTION
         R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
         delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
@@ -784,7 +924,7 @@ class LocalPlanner(Node):
                     self.play_clock_R = StateClock(self.get_clock().now(), rostime=True)
 
             # step 2: get note position in robot frame
-            pd_offsets = np.array([0., 0., -0.01]).reshape([3,1]) # m
+            pd_offsets = np.array([0., 0., -0.015]).reshape([3,1]) # m
             note_world = note_world + pd_offsets
             note_robot = Rotz(np.pi) @ (note_world - P_BASE_WORLD)
 
@@ -809,7 +949,8 @@ class LocalPlanner(Node):
             spline3_holdnote = Goto5(note_robot, note_robot, hold_time, space='task')
 
             # move back up above the note
-            move_time = distance_to_movetime(note_robot, pd_abovenote)
+            #move_time = distance_to_movetime(note_robot, pd_abovenote)
+            move_time = 0.3
             spline4_afternote = Goto5(note_robot, pd_abovenote, move_time, space='task')
 
             # SAVE SPLINES
@@ -865,13 +1006,19 @@ class LocalPlanner(Node):
 
             # step 3: define intermediate points
             # point above the note
-            offset_kb = np.array([0.0, 0.0, 0.04]).reshape([3,1])
+            offset_kb = np.array([0.0, 0.0, 0.03]).reshape([3,1])
             pd_abovenote_kb = note_kb + offset_kb # m
 
             ## Generate and save splines
             # spline to above the note
-            move_time = 1.25
+            if (first):
+                move_time = 1.25
+            else:
+                move_time = midi_helper.note_dist_to_movetime(p_start, pd_abovenote_kb, notes=False) #0.4
             spline1_abovenote = Goto5(p_start, pd_abovenote_kb, move_time, space='keyboard')
+            if (first):
+                hold_time = 0.5
+                spline1dot5_abovenotehold = Hold(pd_abovenote_kb, hold_time, space='keyboard')
 
             # spline to play the note
             move_time = 0.3 # TODO: compute based on desired force
@@ -885,7 +1032,8 @@ class LocalPlanner(Node):
             spline3_holdnote = Goto5(note_kb, note_kb, hold_time, space='keyboard')
 
             # move back up above the note
-            move_time = distance_to_movetime(note_kb, pd_abovenote_kb)
+            # move_time = distance_to_movetime(note_kb, pd_abovenote_kb)
+            move_time = 0.2
             spline4_afternote = Goto5(note_kb, pd_abovenote_kb, move_time, space='keyboard')
 
             # SAVE SPLINES
@@ -893,6 +1041,8 @@ class LocalPlanner(Node):
                 self.playsplines[LRidx] = [spline1_abovenote]
             else:
                 self.playsplines[LRidx].append(spline1_abovenote)
+            if (first):
+                self.playsplines[LRidx].append(spline1dot5_abovenotehold)
             self.playsplines[LRidx].append(spline2_tonote)
             self.playsplines[LRidx].append(spline3_holdnote)
             self.playsplines[LRidx].append(spline4_afternote)
@@ -900,6 +1050,7 @@ class LocalPlanner(Node):
             # set the gripper to closed
             self.grip_effcmd[LRidx] = GRIPPER_CLOSED_EFF
 
+    # TODO: CHECK
     def primitive_pauseabovenote(self, note, duration, left=True):
         # PERCEPTION
         R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
@@ -961,7 +1112,8 @@ class LocalPlanner(Node):
         # set the gripper to closed
         self.grip_effcmd[LRidx] = GRIPPER_CLOSED_EFF
 
-    def shrug(self):
+    def hands_up(self):
+        
         pass # TODO
 
     def neutral_above_piano(self):
@@ -970,7 +1122,7 @@ class LocalPlanner(Node):
         delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
 
         # chill somewhere above the piano
-        neutral_kb = [np.array([0.4, 0.0, 0.3]).reshape([3,1]), np.array([0.6, 0.0, 0.3]).reshape([3,1])]
+        neutral_kb = [np.array([0.4, 0.0, 0.1]).reshape([3,1]), np.array([0.6, 0.0, 0.1]).reshape([3,1])]
 
         # spline from current position
         for LRidx in range(2):
@@ -995,7 +1147,8 @@ class LocalPlanner(Node):
                 # convert to kb frame
                 p_start = self.robot_to_kb_frame(p_start, R_kb_world, delta)
 
-            move_time = distance_to_movetime(p_start, neutral_kb[LRidx])
+            # move_time = distance_to_movetime(p_start, neutral_kb[LRidx])
+            move_time = 2.0
             spline1 = Goto5(p_start, neutral_kb[LRidx], move_time, space='keyboard')
             spline2 = Goto5(neutral_kb[LRidx], neutral_kb[LRidx], 2.0, space='keyboard')
             if (self.playsplines[LRidx] == None):
