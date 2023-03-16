@@ -15,11 +15,17 @@ RATE = 200.0 # Hz
 SONGS_DIR = "/home/robot134/songs/"
 
 notes_to_songs = {tuple(['E5', 'E5', 'F5']) : ("Beethhoven_editedSimple.mid", 45),
+                  tuple(['E4', 'E4', 'F4']) : ("Beethhoven_short.mid", 45),
                   tuple(['C6', 'C6', 'C6']) : ("kanye_lower.mid", 45),
                   tuple(['G4', 'D5', 'E5']) : ("lalalandTheme.mid", 35),
                   tuple(['C4', 'C4', 'D4']) : ("leanOnMe.mid", 30),
                   tuple(['C4', 'F4', 'A4']) : ("amazingGrace.mid", 45),
-                  tuple(['E4', 'G4', 'G4']) : ("hallelujah.mid", 35)
+                  tuple(['E4', 'G4', 'G4']) : ("hallelujah.mid", 35),
+                  tuple(['D4', 'D4', 'D4']) : ("hotlineBling.mid", 35),
+                  tuple(['E4', 'F#4', 'A#4']) : ("dancingQueen.mid", 35),
+                  tuple(['F4', 'G4', 'C4']) : ("rickRoll.mid", 35),
+                  tuple(['C4', 'C5', 'A4']) : ("ballgame.mid", 35),
+                  tuple(['B4', 'B4', 'D5']) : ("bonJovi.mid", 35)
                   }
 
 

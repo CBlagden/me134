@@ -161,3 +161,26 @@ class Goto5(QuinticSpline):
     # Use zero initial/final velocities/accelerations (same size as positions).
     def __init__(self, p0, pf, T, space='koint'):
         QuinticSpline.__init__(self, p0, 0 * p0, 0 * p0, pf, 0 * pf, 0 * pf, T, space)
+
+GRIPPER_OPEN_EFF = 1.0
+GRIPPER_CLOSED_EFF = -2.5
+
+class Clap():
+    def __init__(self, num_claps):
+        self.num_claps = num_claps
+        self.T = num_claps * 0.3
+
+        self.clap_idx = 0
+        
+    def evaluate(self, t):
+        gripcmd = [GRIPPER_OPEN_EFF, GRIPPER_OPEN_EFF]
+        if (t > 0.3 * self.clap_idx):
+            gripcmd = [GRIPPER_CLOSED_EFF, GRIPPER_CLOSED_EFF]
+        if (t > 0.3 * (self.clap_idx + 1)):
+            self.clap_idx += 2
+            gripcmd = [GRIPPER_OPEN_EFF, GRIPPER_OPEN_EFF]
+
+        return gripcmd
+
+    def completed(self, t):
+        return t >= self.T

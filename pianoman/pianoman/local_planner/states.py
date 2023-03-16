@@ -9,6 +9,7 @@ class State(Enum):
     FLOAT = 0
     PLAY = 1
     JOINT = 2
+    CLAP = 3
 
     @classmethod
     def default(cls):
