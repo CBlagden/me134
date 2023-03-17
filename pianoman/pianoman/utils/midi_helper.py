@@ -77,7 +77,7 @@ def note_to_position(note) -> NotePosition:
       octave = (note-36)//12 #determines which local octave we're working in
       localNote = (note - 36) % 12
 
-      x = edge2C2 + octave*octaveDist + noteDistance[localNote] #- 0.3 # TODO: remove?
+      x = edge2C2 + octave*octaveDist + noteDistance[localNote] # # TODO: remove?
       if localNote in [1, 3, 6, 8, 10]: #if it's a black key, adjust the y
          y = 3 + C
          z = 1.15 + 0.9605 + 0.395 + offset2
@@ -129,6 +129,7 @@ def note_trajectories(midi_file, left_bpm: int,
 
    left_trajectory = _get_trajectory2(left_track, mid.ticks_per_beat, left_bpm, True)
    right_trajectory = _get_trajectory2(right_track, mid.ticks_per_beat, right_bpm, False)
+
    return left_trajectory, right_trajectory
 
 
@@ -251,6 +252,8 @@ def _get_trajectory2(track: List[Message],
             if delta_sec <= 0.0: #give it a lower bound in case the note is really short
                print(f"Note {idx}, {note_string}, {isLeft}: delta_sec {delta_sec}")
                print("ohno")
+               print(isLeft)
+               print(ticks_per_beat)
                delta_sec = 0.2 #make it play really short
                # print(f"Note {idx}: not enough time to move between notes. Hand timing will not work. Try making BPM smaller.")
 
@@ -262,10 +265,12 @@ def _get_trajectory2(track: List[Message],
 
 
 if __name__ == '__main__':
-   filename = '/home/robot134/songs/amazingGrace.mid'
-   left_traj, right_traj = note_trajectories(filename, left_bpm=30, right_bpm=30)
+   filename = '/home/robot134/songs/kanye_lower.mid'
+   b = 140
+   left_traj, right_traj = note_trajectories(filename, left_bpm=b, right_bpm=b)
    print(left_traj)
-   #print(right_traj)
+   print("__________________________________________________________")
+   print(right_traj)
 
 
 

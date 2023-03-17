@@ -256,7 +256,7 @@ class KeyboardNode(Node):
                     cv2.polylines(frame, pts, True, self.white, 2)
 
 
-                if KEYBOARD_IDS[0] in keyboard_markers.keys() and KEYBOARD_IDS[1] in keyboard_markers.keys():
+                if KEYBOARD_IDS[0] in keyboard_markers.keys() and KEYBOARD_IDS[1] in keyboard_markers.keys() and KEYBOARD_IDS[1] in marker_id_to_idx and KEYBOARD_IDS[0] in marker_id_to_idx:
                     kb_marker_idx = marker_id_to_idx[KEYBOARD_IDS[0]]
 
                     # self.get_logger().info(str("rotation (world): " + str(np.degrees(self.rot))))
@@ -270,6 +270,9 @@ class KeyboardNode(Node):
                     point_w_mean = np.mean([np.array(point_kb_origin), np.array(point_kb_opposite)], axis=0).reshape((3, 1))
                     point_w_mean = point_w_mean - TransformHelpers.Rotz(-np.pi/2) @ Rot_mat @ POINT_AVERAGE_OFFSET
                     point_w = list(point_w_mean.flatten())
+
+                    # set it to the bottom left and ignore the averaging
+                    # point_w = point_kb_origin
 
                     point = Point(x=point_w[0],
                                     y=point_w[1],

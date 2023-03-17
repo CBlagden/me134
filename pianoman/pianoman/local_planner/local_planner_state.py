@@ -17,6 +17,7 @@ from rclpy.node import Node
 
 import scipy.linalg
 import numpy as np
+import random
 
 from pianoman.local_planner.states import State
 from pianoman.utils.rviz_helper import create_pt_marker
@@ -35,7 +36,7 @@ from me134_interfaces.msg import PoseTwoStamped, SongMsg
 from me134_interfaces.srv import NoteCmdStamped, PosCmdStamped
 
 RATE = 100.0 # Hz
-LAM = 50
+LAM = 75
 
 # P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1]) # m
 P_BASE_WORLD = np.array([-0.018 + 0.03, 0.69 + 0.01, 0.0]).reshape([3, 1]) # m\
@@ -85,7 +86,7 @@ class LocalPlanner(Node):
         self.grip_effcmd = [GRIPPER_OPEN_EFF, GRIPPER_OPEN_EFF]
         self.counter = 0
 
-        self.clap = Clap(5)
+        self.clap = Clap(10)
 
 
         # state clocks
@@ -188,7 +189,7 @@ class LocalPlanner(Node):
                     # end = self.playsplines[0][0].evaluate(self.play_clock_L.paused_dt)[0] 
                     end = self.playsplines[0][0].evaluate(0.0)[0] 
                     end_higher = end + np.array([0.0, 0.0, 0.04]).reshape([3,1])
-                    self.playsplines[0].insert(0, Goto5(p_startL, end_higher, 2.0, space='keyboard'))
+                    self.playsplines[0].insert(0, Goto5(p_startL, end_higher, 5.0, space='keyboard'))
                     self.playsplines[0].insert(1, Goto5(end_higher, end, 2.0, space='keyboard'))
 
                 self.play_clock_R.restart(t, rostime=True)
@@ -199,7 +200,7 @@ class LocalPlanner(Node):
                     # end = self.playsplines[1][0].evaluate(self.play_clock_R.paused_dt)[0] 
                     end = self.playsplines[1][0].evaluate(0.0)[0] 
                     end_higher = end + np.array([0.0, 0.0, 0.04]).reshape([3,1])
-                    self.playsplines[1].insert(0, Goto5(p_startR, end_higher, 2.0, space='keyboard'))
+                    self.playsplines[1].insert(0, Goto5(p_startR, end_higher, 5.0, space='keyboard'))
                     self.playsplines[1].insert(1, Goto5(end_higher, end, 2.0, space='keyboard'))
 
                 print("UPDATING STATE")
@@ -496,8 +497,12 @@ class LocalPlanner(Node):
                             self.playsplines[1].insert(1, Goto5(end_higher, end, 2.0, space='keyboard'))
                     else:
                         # If no spline to run, return to floating mode
-                        self.state = State.CLAP 
-                        self.clap_clock = StateClock(self.get_clock().now(), rostime=True)
+                        if (self.teaching_mode):
+                            self.state = State.FLOAT
+                        else:
+                            self.state = State.CLAP
+                            self.clap = Clap(random.randrange(5, 15))
+                            self.clap_clock = StateClock(self.get_clock().now(), rostime=True)
                         print("Counter triggered. Switching to float.")
                         self.counter = 0
                 
@@ -590,10 +595,22 @@ class LocalPlanner(Node):
             and plays the accompanying song
         """
         # Throw out song commands that come while we are playing a song
-        if (self.state == State.PLAY):
-            return
-
         is_simon_mode = msg.simon_mode
+        if (self.state == State.PLAY):
+            if self.teaching_mode:
+                if (is_simon_mode):
+                    return
+            else:
+                return
+
+        if not is_simon_mode:
+            self.teaching_mode = False
+            self.state = State.FLOAT
+        if self.teaching_mode:
+            return
+        if (msg.song_name == ""):
+            return
+        
 
         self.neutral_above_piano()
         filename = msg.song_name
@@ -625,21 +642,12 @@ class LocalPlanner(Node):
 
             self.state = State.PLAY
 
-        self.get_logger().info(f"Past n notes {self.past_n_notes}")
-        self.get_logger().info(f"Teaching mode {self.teaching_mode}")
-        self.get_logger().info(f"Demo mode {self.is_demoing}")
-        self.get_logger().info(f"Length of notes to play {len(self.notes_to_play)}")
-        self.get_logger().info(f"Num notes to track {self.num_notes_to_track}")
-
         if self.teaching_mode and not self.is_demoing:
             # don't do anything if they have not played enough notes yet
             if len(self.past_n_notes) == self.num_notes_to_track:
                 # check if they have played the last n notes
                 notes_to_check_against = [n[0] for n in self.notes_to_play[:self.num_notes_to_track]]
                 have_played_correct_notes = notes_to_check_against == self.past_n_notes
-
-                self.get_logger().info(f"notes to check against {notes_to_check_against}")
-                self.get_logger().info(f"have played correct notes {have_played_correct_notes}")
 
                 if have_played_correct_notes:
                     if self.num_notes_to_track == len(self.notes_to_play):
@@ -650,7 +658,6 @@ class LocalPlanner(Node):
                     # the person has played the correct last n notes, demo the next one
                     self.num_notes_to_track += 1
 
-                self.neutral_above_piano()
                 for i in range(self.num_notes_to_track):
                     note, duration = self.notes_to_play[i]
                     self.get_logger().info("Playing note {note}")
@@ -658,6 +665,7 @@ class LocalPlanner(Node):
                                             left=False,
                                             space="keyboard",
                                             first=i==0)
+                self.neutral_above_piano(back=True)
                 self.is_demoing = True
                 self.past_n_notes = []
     ## Callback functions
@@ -920,11 +928,11 @@ class LocalPlanner(Node):
             self.get_logger().info("No shot brother - too far away") 
         elif np.abs(np.rad2deg(kb_angle - angle_to_kb_center)) > 60:
             self.get_logger().info("No shot brother - too tilted") 
-        elif dist > .45:
+        elif dist > .45: # 0.45
             self.get_logger().info("Pulling in, distance is %.04f" % dist)
             pulling = True
 
-            pull_scale = .8
+            pull_scale = .4 / dist
 
             pos_center_loop_kb = np.array([0.39, -.03, -0.03]).reshape([3,1])
             pos_center_loop_world = self.kb_to_robot_frame(pos_center_loop_kb, R_kb_world, delta)
@@ -954,7 +962,7 @@ class LocalPlanner(Node):
 
             self.pull_clock_L = StateClock(self.get_clock().now(), rostime=True)
             self.grip_effcmd[0] = GRIPPER_CLOSED_EFF
-        elif dist < .3 and dist > .2:
+        elif dist < .25 and dist > .15: # 0.3 to 0.2
             self.get_logger().info("Pushing out, distance is %.04f" % dist)
             pulling = True
 
@@ -962,7 +970,7 @@ class LocalPlanner(Node):
             pcur_R = pcur_R[3:6, :]
             pcur_R = np.array(pcur_R).reshape([3,1])
 
-            pull_scale = 1.55
+            pull_scale = .4 / dist
 
             push_pos_left_kb = np.array([0.2, -.03, 0.03]).reshape([3,1])
             push_pos_left_world = self.kb_to_robot_frame(push_pos_left_kb, R_kb_world, delta)
@@ -1014,13 +1022,12 @@ class LocalPlanner(Node):
             self.pullsplines[1].append(spline3_R)
             self.pullsplines[1].append(spline4_R)
 
-
             self.pull_clock_L = StateClock(self.get_clock().now(), rostime=True)
             self.pull_clock_R = StateClock(self.get_clock().now(), rostime=True)
             self.grip_effcmd[0] = GRIPPER_CLOSED_EFF
             self.grip_effcmd[1] = GRIPPER_CLOSED_EFF
         elif dist > 0.2:
-            if kb_angle > np.deg2rad(15) + angle_to_kb_center:
+            if kb_angle > np.deg2rad(20) + angle_to_kb_center:
                 self.get_logger().info("Pulling right, angle is %.04f" % np.rad2deg(kb_angle - angle_to_kb_center))
 
                 if True: # TODO: something still wrong with this, be careful!
@@ -1068,7 +1075,7 @@ class LocalPlanner(Node):
                     self.pull_clock_R = StateClock(self.get_clock().now(), rostime=True)
                     self.grip_effcmd[1] = GRIPPER_CLOSED_EFF
 
-            elif kb_angle < np.deg2rad(-15) + angle_to_kb_center:
+            elif kb_angle < np.deg2rad(-20) + angle_to_kb_center:
                 self.get_logger().info("Pulling left, angle is %.04f" % np.rad2deg(kb_angle - angle_to_kb_center))
                 pulling = True
 
@@ -1116,7 +1123,7 @@ class LocalPlanner(Node):
                 self.play_clock_L.pause(t, rostime=True)
             if (self.play_clock_R):
                 self.play_clock_R.pause(t, rostime=True)
-            self.pulling_keyboard = pulling
+            self.pulling_keyboard = True
             self.state = State.PLAY
 
     def cb_pull_kb(self, _):
@@ -1387,7 +1394,7 @@ class LocalPlanner(Node):
             p_start = self.robot_to_kb_frame(p_start, R_kb_world, delta)
 
         # step 2: get note position in robot frame
-        pd_offsets_kb = np.array([0., 0., -0.01]).reshape([3,1]) # m
+        pd_offsets_kb = np.array([0., 0., -0.015]).reshape([3,1]) # m
         note_kb += pd_offsets_kb
 
         # step 3: define intermediate points
@@ -1409,13 +1416,16 @@ class LocalPlanner(Node):
         # set the gripper to closed
         self.grip_effcmd[LRidx] = GRIPPER_CLOSED_EFF
 
-    def neutral_above_piano(self):
+    def neutral_above_piano(self, back=False):
         # get keyboard position
         R_kb_world = Rotz(-np.pi/2) @ self.kb_rot
         delta = np.array([*list(self.kb_pos[:2].flatten()), 0.0]).reshape((3, 1))
 
         # chill somewhere above the piano
-        neutral_kb = [np.array([0.4, 0.0, 0.1]).reshape([3,1]), np.array([0.6, 0.0, 0.1]).reshape([3,1])]
+        if (not back):
+            neutral_kb = [np.array([0.4, 0.0, 0.1]).reshape([3,1]), np.array([0.6, 0.0, 0.1]).reshape([3,1])]
+        else:
+            neutral_kb = [np.array([0.4, -0.1, 0.1]).reshape([3,1]), np.array([0.6, -0.1, 0.1]).reshape([3,1])]
 
         # spline from current position
         for LRidx in range(2):
@@ -1441,9 +1451,15 @@ class LocalPlanner(Node):
                 p_start = self.robot_to_kb_frame(p_start, R_kb_world, delta)
 
             # move_time = distance_to_movetime(p_start, neutral_kb[LRidx])
-            move_time = 2.0
+            if (not back):
+                move_time = 2.0
+            else:
+                move_time = 1.0
             spline1 = Goto5(p_start, neutral_kb[LRidx], move_time, space='keyboard')
-            spline2 = Goto5(neutral_kb[LRidx], neutral_kb[LRidx], 2.0, space='keyboard')
+            if (not back):
+                spline2 = Goto5(neutral_kb[LRidx], neutral_kb[LRidx], 2.0, space='keyboard')
+            else:
+                spline2 = Goto5(neutral_kb[LRidx], neutral_kb[LRidx], 0.1, space='keyboard')
             if (self.playsplines[LRidx] == None):
                 self.playsplines[LRidx] = [spline1]
             else:
