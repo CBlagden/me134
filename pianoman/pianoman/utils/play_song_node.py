@@ -39,6 +39,14 @@ class PlaySongNode(Node):
 
         self.last_three_notes = []
         simon_mode = False
+
+        # msg = SongMsg()
+        # msg.song_name = SONGS_DIR + "/lalalandTheme_edited.mid"
+        # msg.bpm = 30
+        # msg.simon_mode = False
+        # self.pub.publish(msg)
+        # return
+
         with mido.open_input(names[1]) as inport:
             for msg in inport:
                 print(msg)

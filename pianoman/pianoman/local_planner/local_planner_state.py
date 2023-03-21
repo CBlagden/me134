@@ -36,7 +36,7 @@ from me134_interfaces.msg import PoseTwoStamped, SongMsg
 from me134_interfaces.srv import NoteCmdStamped, PosCmdStamped
 
 RATE = 100.0 # Hz
-LAM = 75
+LAM = 80
 
 # P_BASE_WORLD = np.array([-0.018, 0.69, 0.0]).reshape([3, 1]) # m
 P_BASE_WORLD = np.array([-0.018 + 0.03, 0.69 + 0.01, 0.0]).reshape([3, 1]) # m\
